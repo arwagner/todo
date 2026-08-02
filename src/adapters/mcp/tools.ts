@@ -4,27 +4,23 @@ import {
   deleteItem,
   getItem,
   listItems,
-  setLabels,
-  setReminder,
-  setSchedule,
-  setTarget,
-  updateItem,
+  reviseItem,
 } from "../../service/items.ts";
 import {
   dueItems,
+  nextOccurrenceFor,
   streakFor,
   targetProgressFor,
 } from "../../service/queries.ts";
 import {
-  addChild,
-  addDependency,
   listChildren,
   listDependencies,
-  removeChild,
-  removeDependency,
+  relate,
+  unrelate,
 } from "../../service/relationships.ts";
 import { instantiateTemplate } from "../../service/templates.ts";
 import { invalid } from "../../service/errors.ts";
+import type { RelationshipKind } from "../../service/relationships.ts";
 import type { Principal, ServiceContext } from "../../service/context.ts";
 
 export type Tool = {
@@ -42,7 +38,7 @@ const RECURRENCE_SCHEMA = {
   type: "object",
   description:
     "How the Item repeats. A schedule anchor measures the next repetition " +
-    "from fixed calendar dates; a completion anchor measures it from the " +
+    "from fixed calendar dates. A completion anchor measures it from the " +
     "last Completion.",
   properties: {
     kind: { type: "string", enum: ["schedule", "completion"] },
@@ -101,8 +97,8 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "capture",
     description:
-      "Write down a piece of work. Everything beyond the title is optional; " +
-      "a Preset ('task', 'habit', 'project', 'goal') checks that the " +
+      "Write down a piece of work. Everything beyond the title is optional. " +
+      "A Preset ('task', 'habit', 'project', 'goal') checks that the " +
       "Capabilities it needs are present.",
     inputSchema: {
       type: "object",
@@ -126,7 +122,7 @@ export const TOOLS: readonly Tool[] = [
     name: "agenda",
     description:
       "What is waiting on the Owner at a given moment. Recurrence Rules are " +
-      "evaluated now, at query time; nothing runs in the background.",
+      "evaluated now, at query time. Nothing runs in the background.",
     inputSchema: {
       type: "object",
       properties: {
@@ -177,6 +173,7 @@ export const TOOLS: readonly Tool[] = [
       return {
         item: getItem(ctx, principal, itemId),
         events: listEvents(ctx, principal, itemId),
+        nextOccurrence: nextOccurrenceFor(ctx, principal, itemId, at),
         streak: streakFor(ctx, principal, itemId, at),
         target: targetProgressFor(ctx, principal, itemId),
         contains: listChildren(ctx, principal, itemId),
@@ -201,7 +198,7 @@ export const TOOLS: readonly Tool[] = [
         },
         at: {
           type: "string",
-          description: "ISO 8601. Defaults to now; backdating is allowed.",
+          description: "ISO 8601. Defaults to now. Backdating is allowed.",
         },
         amount: {
           type: "number",
@@ -246,25 +243,8 @@ export const TOOLS: readonly Tool[] = [
       },
       required: ["itemId"],
     },
-    handle: (ctx, principal, args) => {
-      const itemId = required(args, "itemId");
-      if (has(args, "title") || has(args, "notes")) {
-        updateItem(ctx, principal, itemId, args as never);
-      }
-      if (has(args, "labels")) {
-        setLabels(ctx, principal, itemId, args["labels"] as string[]);
-      }
-      if (has(args, "schedule")) {
-        setSchedule(ctx, principal, itemId, args["schedule"] as never);
-      }
-      if (has(args, "target")) {
-        setTarget(ctx, principal, itemId, args["target"] as never);
-      }
-      if (has(args, "reminder")) {
-        setReminder(ctx, principal, itemId, args["reminder"] as never);
-      }
-      return getItem(ctx, principal, itemId);
-    },
+    handle: (ctx, principal, args) =>
+      reviseItem(ctx, principal, required(args, "itemId"), args as never),
   },
 
   {
@@ -285,19 +265,14 @@ export const TOOLS: readonly Tool[] = [
     },
     handle: (ctx, principal, args) => {
       const itemId = required(args, "itemId");
-      const otherId = required(args, "otherId");
-      const remove = args["remove"] === true;
-      const kind = required(args, "kind");
-
-      if (kind === "dependency") {
-        if (remove) removeDependency(ctx, principal, itemId, otherId);
-        else addDependency(ctx, principal, itemId, otherId);
-      } else if (kind === "containment") {
-        if (remove) removeChild(ctx, principal, itemId, otherId);
-        else addChild(ctx, principal, itemId, otherId);
-      } else {
-        throw invalid("kind must be 'dependency' or 'containment'");
-      }
+      const link = args["remove"] === true ? unrelate : relate;
+      link(
+        ctx,
+        principal,
+        required(args, "kind") as RelationshipKind,
+        itemId,
+        required(args, "otherId"),
+      );
       return getItem(ctx, principal, itemId);
     },
   },

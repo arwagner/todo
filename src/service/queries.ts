@@ -1,4 +1,4 @@
-import { currentOccurrence } from "../domain/recurrence.ts";
+import { currentOccurrence, nextOccurrence } from "../domain/recurrence.ts";
 import { streakOf } from "../domain/streak.ts";
 import { readLog } from "./events.ts";
 import { getItem, hydrate } from "./items.ts";
@@ -16,7 +16,7 @@ import type { Principal, ServiceContext } from "./context.ts";
 export function dueItems(
   ctx: ServiceContext,
   principal: Principal,
-  at: string,
+  at: string = ctx.now(),
 ): Item[] {
   const rows = ctx.db
     .prepare(
@@ -60,12 +60,41 @@ function isDue(ctx: ServiceContext, item: Item, at: string): boolean {
   );
 }
 
+/**
+ * When the Item next comes due after `at`, or null if it never does.
+ *
+ * The Occurrence is computed from the Recurrence Rule and the Event history
+ * rather than stored, so this answer changes as the history does.
+ */
+export function nextOccurrenceFor(
+  ctx: ServiceContext,
+  principal: Principal,
+  itemId: string,
+  at: string = ctx.now(),
+): string | null {
+  const item = getItem(ctx, principal, itemId);
+  const schedule = item.schedule;
+  if (schedule === null) return null;
+
+  if (schedule.rule === null) {
+    if (schedule.dueAt === null || item.status === "completed") return null;
+    return Date.parse(schedule.dueAt) > Date.parse(at) ? schedule.dueAt : null;
+  }
+
+  const completions = completionsOf(readLog(ctx, itemId));
+  return nextOccurrence(
+    schedule.rule,
+    { dueAt: schedule.dueAt, lastCompletedAt: completions.at(-1) ?? null },
+    at,
+  );
+}
+
 /** The count of consecutive periods with at least one Completion. */
 export function streakFor(
   ctx: ServiceContext,
   principal: Principal,
   itemId: string,
-  at: string,
+  at: string = ctx.now(),
 ): number {
   const item = getItem(ctx, principal, itemId);
   return streakOf(
@@ -88,8 +117,9 @@ export type TargetProgress = {
 };
 
 /**
- * A Target is a sum of Progress amounts in a window: from when the Item was
- * created until its deadline (ADR 2).
+ * A Target is a sum of Progress amounts in a window (ADR 2). The window runs
+ * from when the Item was created until its deadline. Backdating an Event is
+ * allowed, so Progress can fall outside the window at either end.
  */
 export function targetProgressFor(
   ctx: ServiceContext,
@@ -100,15 +130,18 @@ export function targetProgressFor(
   const target = item.target;
   if (target === null) return null;
 
-  const deadline =
+  const opens = Date.parse(item.createdAt);
+  const closes =
     target.deadline === null
       ? Number.POSITIVE_INFINITY
       : Date.parse(target.deadline);
 
   const recorded = readLog(ctx, itemId)
-    .filter(
-      (event) => event.kind === "progress" && Date.parse(event.at) <= deadline,
-    )
+    .filter((event) => {
+      if (event.kind !== "progress") return false;
+      const at = Date.parse(event.at);
+      return at >= opens && at <= closes;
+    })
     .reduce((total, event) => total + (event.amount ?? 0), 0);
 
   return {

@@ -24,6 +24,10 @@ export type Item = {
   notes: string | null;
   isTemplate: boolean;
   instantiatedFrom: string | null;
+  /**
+   * Read from the Event log. For a recurring Item this describes the most
+   * recent Occurrence, not whether the Item is due again. See `statusOf`.
+   */
   status: Status;
   labels: string[];
   schedule: Schedule | null;
@@ -67,7 +71,7 @@ export function createItem(
   principal: Principal,
   input: CreateItemInput,
 ): Item {
-  if (input.title.trim() === "") throw invalid("an Item needs a title");
+  const title = cleanTitle(input.title);
 
   return transact(ctx.db, () => {
     const at = ctx.now();
@@ -83,7 +87,7 @@ export function createItem(
       .run(
         id,
         principal.id,
-        input.title.trim(),
+        title,
         input.notes ?? null,
         input.isTemplate === true ? 1 : 0,
         input.instantiatedFrom ?? null,
@@ -218,7 +222,7 @@ export function updateItem(
       "update items set title = ?, notes = ?, updated_at = ? where id = ? and owner_id = ?",
     )
     .run(
-      input.title ?? existing.title,
+      input.title === undefined ? existing.title : cleanTitle(input.title),
       input.notes === undefined ? existing.notes : input.notes,
       ctx.now(),
       id,
@@ -226,6 +230,54 @@ export function updateItem(
     );
 
   return getItem(ctx, principal, id);
+}
+
+export type ReviseItemInput = UpdateItemInput & {
+  labels?: readonly string[];
+  schedule?: Schedule | null;
+  target?: Target | null;
+  reminder?: Reminder | null;
+};
+
+/**
+ * Changes attributes and Capabilities together, in one transaction. A caller
+ * that revises four things and fails on the fourth must find the Item exactly
+ * as it was.
+ *
+ * Only the keys present in `input` are touched. Passing null removes a
+ * Capability.
+ */
+export function reviseItem(
+  ctx: ServiceContext,
+  principal: Principal,
+  id: string,
+  input: ReviseItemInput,
+): Item {
+  return transact(ctx.db, () => {
+    getItem(ctx, principal, id);
+
+    if (given(input, "title") || given(input, "notes")) {
+      updateItem(ctx, principal, id, input);
+    }
+    if (given(input, "labels")) {
+      setLabels(ctx, principal, id, input.labels as readonly string[]);
+    }
+    if (given(input, "schedule")) {
+      setSchedule(ctx, principal, id, input.schedule ?? null);
+    }
+    if (given(input, "target")) {
+      setTarget(ctx, principal, id, input.target ?? null);
+    }
+    if (given(input, "reminder")) {
+      setReminder(ctx, principal, id, input.reminder ?? null);
+    }
+
+    return getItem(ctx, principal, id);
+  });
+}
+
+function given(input: ReviseItemInput, key: keyof ReviseItemInput): boolean {
+  return Object.hasOwn(input, key) && input[key] !== undefined;
 }
 
 export function deleteItem(
@@ -266,6 +318,18 @@ function writeLabels(
     const trimmed = label.trim();
     if (trimmed !== "") insert.run(itemId, trimmed);
   }
+}
+
+/**
+ * The service does not trust its callers. An adapter that hands over a title
+ * of the wrong type must get a ServiceError, not a TypeError, because only the
+ * first one becomes a sensible status code.
+ */
+function cleanTitle(title: unknown): string {
+  if (typeof title !== "string" || title.trim() === "") {
+    throw invalid("an Item needs a title");
+  }
+  return title.trim();
 }
 
 export function touch(ctx: ServiceContext, id: string): void {

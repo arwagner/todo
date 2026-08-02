@@ -7,8 +7,10 @@ import {
   addDependency,
   listChildren,
   listDependencies,
+  relate,
   removeChild,
   removeDependency,
+  unrelate,
 } from "../../src/service/relationships.ts";
 import { testHarness } from "../support/service.ts";
 
@@ -117,4 +119,31 @@ test("relationships cannot reach across Owners", () => {
   assert.throws(() => addChild(ctx, principal, mine.id, theirs.id), {
     code: "not_found",
   });
+});
+
+test("an unrecognized kind of relationship is refused by the service", () => {
+  const { ctx, principal } = testHarness();
+  const first = createItem(ctx, principal, { title: "First" });
+  const second = createItem(ctx, principal, { title: "Second" });
+
+  assert.throws(
+    () =>
+      relate(ctx, principal, "nonsense" as "dependency", first.id, second.id),
+    { code: "invalid" },
+  );
+});
+
+test("relate and unrelate reach both kinds of relationship", () => {
+  const { ctx, principal } = testHarness();
+  const trip = createItem(ctx, principal, { title: "Trip to Lisbon" });
+  const flights = createItem(ctx, principal, { title: "Book flights" });
+
+  relate(ctx, principal, "containment", trip.id, flights.id);
+  assert.deepEqual(getItem(ctx, principal, trip.id).rollup, {
+    complete: 0,
+    total: 1,
+  });
+
+  unrelate(ctx, principal, "containment", trip.id, flights.id);
+  assert.equal(getItem(ctx, principal, trip.id).rollup, null);
 });

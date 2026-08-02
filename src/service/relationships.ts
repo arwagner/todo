@@ -1,8 +1,56 @@
 import { transact } from "../db/transact.ts";
-import { conflict } from "./errors.ts";
+import { conflict, invalid } from "./errors.ts";
 import { getItem, hydrate } from "./items.ts";
 import type { Item } from "./items.ts";
 import type { Principal, ServiceContext } from "./context.ts";
+
+export type RelationshipKind = "dependency" | "containment";
+
+/** Each relationship is one directed edge table, described once. */
+const EDGES = {
+  dependency: {
+    table: "dependencies",
+    from: "item_id",
+    to: "depends_on_id",
+  },
+  containment: {
+    table: "containment",
+    from: "container_id",
+    to: "child_id",
+  },
+} as const;
+
+type Edge = (typeof EDGES)[RelationshipKind];
+
+/**
+ * Adds a relationship of either kind. A coarse adapter needs one entry point
+ * rather than a choice of two, and choosing between them is the service's job
+ * (ADR 4).
+ */
+export function relate(
+  ctx: ServiceContext,
+  principal: Principal,
+  kind: RelationshipKind,
+  itemId: string,
+  otherId: string,
+): void {
+  if (kind === "dependency") addDependency(ctx, principal, itemId, otherId);
+  else if (kind === "containment") addChild(ctx, principal, itemId, otherId);
+  else throw invalid("kind must be 'dependency' or 'containment'");
+}
+
+/** Removes a relationship of either kind. */
+export function unrelate(
+  ctx: ServiceContext,
+  principal: Principal,
+  kind: RelationshipKind,
+  itemId: string,
+  otherId: string,
+): void {
+  if (kind === "dependency") removeDependency(ctx, principal, itemId, otherId);
+  else if (kind === "containment") removeChild(ctx, principal, itemId, otherId);
+  else throw invalid("kind must be 'dependency' or 'containment'");
+}
 
 /** `itemId` cannot proceed until `dependsOnId` is complete. */
 export function addDependency(
@@ -13,7 +61,7 @@ export function addDependency(
 ): void {
   transact(ctx.db, () => {
     requireBoth(ctx, principal, itemId, dependsOnId, "depend on");
-    if (reaches(ctx, "dependencies", "depends_on_id", dependsOnId, itemId)) {
+    if (reaches(ctx, EDGES.dependency, dependsOnId, itemId)) {
       throw conflict("that Dependency would close a cycle");
     }
     ctx.db
@@ -67,7 +115,7 @@ export function addChild(
 ): void {
   transact(ctx.db, () => {
     requireBoth(ctx, principal, containerId, childId, "contain");
-    if (reaches(ctx, "containment", "child_id", childId, containerId)) {
+    if (reaches(ctx, EDGES.containment, childId, containerId)) {
       throw conflict("that Containment would close a cycle");
     }
     ctx.db
@@ -127,19 +175,18 @@ function requireBoth(
  */
 function reaches(
   ctx: ServiceContext,
-  table: "dependencies" | "containment",
-  toColumn: "depends_on_id" | "child_id",
+  edge: Edge,
   start: string,
   target: string,
 ): boolean {
-  const fromColumn = table === "dependencies" ? "item_id" : "container_id";
+  // The table and column names come from EDGES, never from a caller.
   const row = ctx.db
     .prepare(
       `with recursive reachable(id) as (
          select ?
          union
-         select ${table}.${toColumn} from ${table}
-           join reachable on reachable.id = ${table}.${fromColumn}
+         select ${edge.table}.${edge.to} from ${edge.table}
+           join reachable on reachable.id = ${edge.table}.${edge.from}
        )
        select 1 as found from reachable where id = ? limit 1`,
     )

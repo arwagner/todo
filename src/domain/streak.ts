@@ -24,7 +24,11 @@ export function streakOf(
   history: StreakHistory,
   at: string,
 ): number {
-  if (rule === null || rule.kind === "completion" || history.dueAt === null) {
+  // Without a rule there are no periods to be consecutive, so there is no
+  // Streak to count.
+  if (rule === null) return 0;
+
+  if (rule.kind === "completion" || history.dueAt === null) {
     return history.completions.length;
   }
 

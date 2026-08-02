@@ -72,3 +72,12 @@ test("an Item never completed has no Streak", () => {
     0,
   );
 });
+
+test("an Item with no Recurrence Rule has no periods, so no Streak", () => {
+  const completions = ["2026-01-06T18:00:00Z", "2026-01-13T18:00:00Z"];
+
+  assert.equal(
+    streakOf(null, { dueAt: null, completions }, "2026-01-30T12:00:00Z"),
+    0,
+  );
+});

@@ -108,3 +108,22 @@ test("a service error comes back as a tool error rather than a crash", async () 
   assert.equal(badPreset.isError, true);
   assert.match(badPreset.text, /invalid/);
 });
+
+test("a revision that fails partway leaves the Item exactly as it was", async () => {
+  const { call } = await withClient();
+  const item = (
+    await call("capture", { title: "Read books", labels: ["reading"] })
+  ).json() as { id: string };
+
+  const failed = await call("revise", {
+    itemId: item.id,
+    labels: ["changed"],
+    target: { amount: 0 },
+  });
+
+  assert.equal(failed.isError, true);
+  const after = (await call("inspect_item", { itemId: item.id })).json() as {
+    item: { labels: string[] };
+  };
+  assert.deepEqual(after.item.labels, ["reading"]);
+});

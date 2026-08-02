@@ -29,7 +29,7 @@ export function checkPreset(name: string, capabilities: Capabilities): void {
   const requirements = PRESETS[name];
   if (requirements === undefined) {
     throw invalid(
-      `unknown preset "${name}"; expected one of ${Object.keys(PRESETS).join(", ")}`,
+      `unknown preset "${name}". Expected one of ${Object.keys(PRESETS).join(", ")}`,
     );
   }
 

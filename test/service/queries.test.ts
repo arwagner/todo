@@ -4,6 +4,7 @@ import { recordEvent } from "../../src/service/events.ts";
 import { createItem } from "../../src/service/items.ts";
 import {
   dueItems,
+  nextOccurrenceFor,
   streakFor,
   targetProgressFor,
 } from "../../src/service/queries.ts";
@@ -160,4 +161,44 @@ test("an Item with no Target has no progress to report", () => {
   const item = createItem(ctx, principal, { title: "Renew passport" });
 
   assert.equal(targetProgressFor(ctx, principal, item.id), null);
+});
+
+test("Progress recorded before the Item existed is outside the Target window", () => {
+  const { ctx, principal } = testHarness("2026-01-01T00:00:00Z");
+  const reading = createItem(ctx, principal, {
+    title: "Read twelve books",
+    target: { amount: 12, unit: "books", deadline: "2026-12-31T00:00:00Z" },
+  });
+
+  recordEvent(ctx, principal, reading.id, {
+    kind: "progress",
+    amount: 5,
+    at: "2025-11-01T00:00:00Z",
+  });
+  recordEvent(ctx, principal, reading.id, {
+    kind: "progress",
+    amount: 2,
+    at: "2026-03-01T00:00:00Z",
+  });
+
+  assert.equal(targetProgressFor(ctx, principal, reading.id)?.recorded, 2);
+});
+
+test("an Item can say when it next comes due", () => {
+  const { ctx, principal, bins } = withBins();
+
+  assert.equal(
+    nextOccurrenceFor(ctx, principal, bins.id, "2026-01-07T09:00:00Z"),
+    "2026-01-13T08:00:00.000Z",
+  );
+});
+
+test("an Item with no Schedule never comes due again", () => {
+  const { ctx, principal } = testHarness();
+  const item = createItem(ctx, principal, { title: "Someday, maybe" });
+
+  assert.equal(
+    nextOccurrenceFor(ctx, principal, item.id, "2026-01-07T09:00:00Z"),
+    null,
+  );
 });

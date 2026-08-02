@@ -97,3 +97,34 @@ test("a service error becomes the matching HTTP status", async () => {
   assert.equal((await call("GET", "/nowhere")).status, 404);
   assert.equal((await call("DELETE", "/due")).status, 405);
 });
+
+test("the next Occurrence is readable over HTTP", async () => {
+  const { call } = await withServer();
+  const bins = (await (
+    await call("POST", "/items", {
+      body: {
+        title: "Take the bins out",
+        schedule: {
+          dueAt: "2026-01-06T08:00:00Z",
+          rule: { kind: "schedule", every: 1, unit: "week" },
+        },
+      },
+    })
+  ).json()) as { id: string };
+
+  const response = await call(
+    "GET",
+    `/items/${bins.id}/next-occurrence?at=2026-01-07T09:00:00Z`,
+  );
+
+  assert.deepEqual((await response.json()) as unknown, {
+    nextOccurrence: "2026-01-13T08:00:00.000Z",
+  });
+});
+
+test("an unrecognized status filter is refused rather than returning nothing", async () => {
+  const { call } = await withServer();
+
+  assert.equal((await call("GET", "/items?status=nonsense")).status, 400);
+  assert.equal((await call("GET", "/items?status=completed")).status, 200);
+});

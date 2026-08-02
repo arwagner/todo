@@ -5,10 +5,10 @@ import type { DatabaseSync } from "node:sqlite";
 const MIGRATIONS_DIR = join(import.meta.dirname, "migrations");
 
 /**
- * Applies every unapplied migration file in name order, each in its own
- * transaction. Hand-rolled rather than inherited from a migration library,
- * which is the whole of what `better-sqlite3`'s ecosystem would have bought
- * us (ADR 5).
+ * Applies every unapplied migration file in name order. Each file runs in its
+ * own transaction. This is hand-rolled rather than taken from a migration
+ * library. Such a library is the whole of what `better-sqlite3` would have
+ * bought us (ADR 5).
  */
 export function migrate(db: DatabaseSync): void {
   db.exec(`

@@ -3,11 +3,12 @@ export type RecurrenceUnit = "day" | "week" | "month" | "year";
 /**
  * How often an Item repeats, and what the next repetition is measured from.
  *
- * The tag is the Anchor, because the Anchor is what changes the arithmetic: a
- * `schedule` rule walks a fixed calendar grid, a `completion` rule measures
- * from the last Completion and has no grid at all (ADR 3). Stored as a tagged
- * object so a `{ kind: "rrule" }` variant can join it later without touching
- * existing rows.
+ * The tag is the Anchor, because the Anchor changes the arithmetic. A
+ * `schedule` rule walks a fixed calendar grid. A `completion` rule measures
+ * from the last Completion and has no grid at all (ADR 3).
+ *
+ * The rule is a tagged object, so a `{ kind: "rrule" }` variant can join it
+ * later without touching existing rows.
  */
 export type RecurrenceRule =
   | {

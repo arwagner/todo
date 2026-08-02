@@ -4,14 +4,15 @@ import {
   deleteItem,
   getItem,
   listItems,
+  reviseItem,
   setLabels,
   setReminder,
   setSchedule,
   setTarget,
-  updateItem,
 } from "../../service/items.ts";
 import {
   dueItems,
+  nextOccurrenceFor,
   streakFor,
   targetProgressFor,
 } from "../../service/queries.ts";
@@ -29,7 +30,7 @@ import { route } from "./router.ts";
 import type { Route, RouteInput } from "./router.ts";
 import type {
   CreateItemInput,
-  UpdateItemInput,
+  ReviseItemInput,
 } from "../../service/items.ts";
 import type { RecordEventInput } from "../../service/events.ts";
 import type { ServiceContext } from "../../service/context.ts";
@@ -51,7 +52,7 @@ export function routes(ctx: ServiceContext): Route[] {
       status: 200,
       body: listItems(ctx, principal, {
         ...optional("label", query.get("label")),
-        ...optional("status", query.get("status") as Status | null),
+        ...optional("status", status(query.get("status"))),
         ...optional("isTemplate", flag(query.get("isTemplate"))),
       }),
     })),
@@ -63,7 +64,7 @@ export function routes(ctx: ServiceContext): Route[] {
 
     route("PATCH", "/items/:id", ({ principal, params, body }) => ({
       status: 200,
-      body: updateItem(ctx, principal, id(params), fields<UpdateItemInput>(body)),
+      body: reviseItem(ctx, principal, id(params), fields<ReviseItemInput>(body)),
     })),
 
     route("DELETE", "/items/:id", ({ principal, params }) => {
@@ -113,8 +114,18 @@ export function routes(ctx: ServiceContext): Route[] {
 
     route("GET", "/items/:id/streak", ({ principal, params, query }) => ({
       status: 200,
+      body: { streak: streakFor(ctx, principal, id(params), at(query)) },
+    })),
+
+    route("GET", "/items/:id/next-occurrence", ({ principal, params, query }) => ({
+      status: 200,
       body: {
-        streak: streakFor(ctx, principal, id(params), at(ctx, query)),
+        nextOccurrence: nextOccurrenceFor(
+          ctx,
+          principal,
+          id(params),
+          at(query),
+        ),
       },
     })),
 
@@ -160,7 +171,7 @@ export function routes(ctx: ServiceContext): Route[] {
 
     route("GET", "/due", ({ principal, query }) => ({
       status: 200,
-      body: dueItems(ctx, principal, at(ctx, query)),
+      body: dueItems(ctx, principal, at(query)),
     })),
   ];
 }
@@ -169,8 +180,25 @@ function id(params: RouteInput["params"]): string {
   return params["id"] as string;
 }
 
-function at(ctx: ServiceContext, query: URLSearchParams): string {
-  return query.get("at") ?? ctx.now();
+/** The service defaults `at` to its own clock when the caller omits it. */
+function at(query: URLSearchParams): string | undefined {
+  return query.get("at") ?? undefined;
+}
+
+const STATUSES: readonly Status[] = [
+  "captured",
+  "promoted",
+  "started",
+  "completed",
+  "dropped",
+];
+
+function status(value: string | null): Status | null {
+  if (value === null) return null;
+  if (!STATUSES.includes(value as Status)) {
+    throw invalid(`status must be one of ${STATUSES.join(", ")}`);
+  }
+  return value as Status;
 }
 
 // The service does the validation. These helpers only check that the JSON has

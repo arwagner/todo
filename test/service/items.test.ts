@@ -82,3 +82,12 @@ test("deleting an Item takes it out of reach", () => {
   });
   assert.deepEqual(listItems(ctx, principal), []);
 });
+
+test("a title that is not text is refused rather than crashing", () => {
+  const { ctx, principal } = testHarness();
+
+  assert.throws(
+    () => createItem(ctx, principal, { title: 42 as unknown as string }),
+    { code: "invalid" },
+  );
+});

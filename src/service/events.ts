@@ -30,7 +30,7 @@ export function recordEvent(
 ): Event {
   if (!KINDS.includes(input.kind)) {
     throw invalid(
-      `only lifecycle facts are Events; expected one of ${KINDS.join(", ")}`,
+      `only lifecycle facts are Events. Expected one of ${KINDS.join(", ")}`,
     );
   }
 

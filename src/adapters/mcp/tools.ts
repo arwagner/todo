@@ -121,19 +121,23 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "agenda",
     description:
-      "What is waiting on the Owner at a given moment. Recurrence Rules are " +
-      "evaluated now, at query time. Nothing runs in the background.",
+      "What is waiting on the Owner, up to a horizon. Returns every Item due " +
+      "at or before `through`. Work due tonight is not on the agenda you ask " +
+      "for this afternoon. To see the rest of today, pass the end of your " +
+      "own day. Recurrence Rules are evaluated now, at query time. Nothing " +
+      "runs in the background.",
     inputSchema: {
       type: "object",
       properties: {
-        at: {
+        through: {
           type: "string",
-          description: "ISO 8601 timestamp. Defaults to now.",
+          description:
+            "ISO 8601 timestamp. The horizon of the agenda. Defaults to now.",
         },
       },
     },
     handle: (ctx, principal, args) =>
-      dueItems(ctx, principal, string(args["at"]) ?? ctx.now()),
+      dueItems(ctx, principal, string(args["through"]) ?? ctx.now()),
   },
 
   {

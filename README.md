@@ -148,3 +148,9 @@ Nothing runs on a timer. Reminder times are stored and Recurrence Rules are
 stored, but nothing fires them. Asking what is due evaluates the rules at query
 time, against a time you supply. Templates are instantiated by an explicit
 call. This is a decision, not an unfinished feature. ADR 7 explains it.
+
+The time you supply is a horizon, not a moment. The agenda returns everything
+due at or before it, so `GET /due` and the `agenda` tool both take `through`.
+Work due at 23:59 is not on the agenda you ask for at 16:40. To see the rest of
+today, pass the end of your own day. Nothing here holds a timezone for you, so
+where your day ends is yours to say.

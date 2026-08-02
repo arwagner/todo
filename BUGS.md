@@ -2,7 +2,7 @@
 
 Found on 2026-08-02 through the MCP adapter while creating 37 items.
 
-Bugs 1 and 2 are fixed. Bug 3 is still open. Each heading says which.
+All three are fixed. Each heading says so.
 
 ## 1. A schedule with only a due date crashes the server (fixed)
 
@@ -72,7 +72,14 @@ Relevant code: `validateSchedule` and `validateTarget` in
 
 **Workaround:** none needed now. A caller may omit any optional sub-field.
 
-## 3. Agenda hides work that is due later the same day (open)
+## 3. Agenda hides work that is due later the same day (fixed)
+
+Ticket 03 fixed this. The reading was the intended one, so the behavior did not
+change. The parameter was the problem. It is now called `through` on both
+surfaces. The tool description and the README say that the agenda returns
+everything due at or before it. A caller who wants the rest of today passes the
+end of its own day. The report below is filed as it arrived, so its second call
+still names `at`, which the agenda no longer reads.
 
 **Setup:** an item due at 2026-08-02T23:59:00-04:00.
 

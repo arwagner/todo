@@ -85,16 +85,34 @@ test("the agenda evaluates Recurrence Rules at the moment it is asked", async ()
     })
   ).json() as { id: string };
 
-  const before = (await call("agenda", { at: "2026-01-05T09:00:00Z" })).json();
-  const after = (await call("agenda", { at: "2026-01-06T09:00:00Z" })).json() as {
-    id: string;
-  }[];
+  const before = (
+    await call("agenda", { through: "2026-01-05T09:00:00Z" })
+  ).json();
+  const after = (
+    await call("agenda", { through: "2026-01-06T09:00:00Z" })
+  ).json() as { id: string }[];
 
   assert.deepEqual(before, []);
   assert.deepEqual(
     after.map((item) => item.id),
     [bins.id],
   );
+});
+
+test("the agenda takes a horizon, and inspecting an Item takes a moment", async () => {
+  const { client } = await withClient();
+
+  const { tools } = await client.listTools();
+  const properties = (name: string) =>
+    Object.keys(
+      (tools.find((tool) => tool.name === name)?.inputSchema.properties ??
+        {}) as Record<string, unknown>,
+    );
+
+  // Two different things, so two different names. The agenda reaches to a
+  // horizon. `at` is the moment to evaluate a Streak, and keeps its own name.
+  assert.deepEqual(properties("agenda"), ["through"]);
+  assert.ok(properties("inspect_item").includes("at"));
 });
 
 test("a service error comes back as a tool error rather than a crash", async () => {

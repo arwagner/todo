@@ -126,7 +126,9 @@ export function routes(ctx: ServiceContext): Route[] {
 
     route("GET", "/items/:id/streak", ({ principal, params, query }) => ({
       status: 200,
-      body: { streak: streakFor(ctx, principal, id(params), at(query)) },
+      body: {
+        streak: streakFor(ctx, principal, id(params), time(query, "at")),
+      },
     })),
 
     route("GET", "/items/:id/next-occurrence", ({ principal, params, query }) => ({
@@ -136,7 +138,7 @@ export function routes(ctx: ServiceContext): Route[] {
           ctx,
           principal,
           id(params),
-          at(query),
+          time(query, "at"),
         ),
       },
     })),
@@ -183,7 +185,7 @@ export function routes(ctx: ServiceContext): Route[] {
 
     route("GET", "/due", ({ principal, query }) => ({
       status: 200,
-      body: dueItems(ctx, principal, at(query)),
+      body: dueItems(ctx, principal, time(query, "through")),
     })),
   ];
 }
@@ -192,9 +194,9 @@ function id(params: RouteInput["params"]): string {
   return params["id"] as string;
 }
 
-/** The service defaults `at` to its own clock when the caller omits it. */
-function at(query: URLSearchParams): string | undefined {
-  return query.get("at") ?? undefined;
+/** The service defaults a time to its own clock when the caller omits it. */
+function time(query: URLSearchParams, key: string): string | undefined {
+  return query.get(key) ?? undefined;
 }
 
 

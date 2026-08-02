@@ -7,7 +7,11 @@ import type { Event } from "../domain/types.ts";
 import type { Principal, ServiceContext } from "./context.ts";
 
 /**
- * The Items waiting on their Owner at time `at`.
+ * The Items waiting on their Owner, up to and including `through`.
+ *
+ * The time is a horizon rather than a moment, so a caller that wants the rest
+ * of its own day passes the end of it. Nothing here holds a timezone for a
+ * Principal, so where a day ends is the caller's to decide.
  *
  * Nothing computes this in the background. This function evaluates the
  * Recurrence Rules at query time, against a time the caller supplies. The
@@ -16,7 +20,7 @@ import type { Principal, ServiceContext } from "./context.ts";
 export function dueItems(
   ctx: ServiceContext,
   principal: Principal,
-  at: string = ctx.now(),
+  through: string = ctx.now(),
 ): Item[] {
   const rows = ctx.db
     .prepare(
@@ -29,10 +33,10 @@ export function dueItems(
     )
     .all(principal.id);
 
-  return hydrate(ctx, rows).filter((item) => isDue(ctx, item, at));
+  return hydrate(ctx, rows).filter((item) => isDue(ctx, item, through));
 }
 
-function isDue(ctx: ServiceContext, item: Item, at: string): boolean {
+function isDue(ctx: ServiceContext, item: Item, through: string): boolean {
   const schedule = item.schedule;
   if (schedule === null) return false;
 
@@ -42,13 +46,13 @@ function isDue(ctx: ServiceContext, item: Item, at: string): boolean {
   // No Recurrence Rule: one due date, and finishing it is the end of it.
   if (schedule.rule === null) {
     if (schedule.dueAt === null || item.status === "completed") return false;
-    return Date.parse(schedule.dueAt) <= Date.parse(at);
+    return Date.parse(schedule.dueAt) <= Date.parse(through);
   }
 
   const occurrence = currentOccurrence(
     schedule.rule,
     { dueAt: schedule.dueAt, lastCompletedAt },
-    at,
+    through,
   );
   if (occurrence === null) return false;
 

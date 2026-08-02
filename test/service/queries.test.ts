@@ -35,6 +35,39 @@ test("what is due is evaluated at query time against a time the caller supplies"
   assert.deepEqual(dueItems(ctx, principal, "2026-01-05T09:00:00Z"), []);
 });
 
+test("the time is a horizon, so work due later today is already on the agenda", () => {
+  const { ctx, principal } = testHarness();
+  const laundry = createItem(ctx, principal, {
+    title: "Do the laundry",
+    schedule: { dueAt: "2026-08-02T23:59:00-04:00" },
+  });
+
+  assert.deepEqual(dueItems(ctx, principal, "2026-08-02T16:40:00-04:00"), []);
+  assert.deepEqual(
+    dueItems(ctx, principal, "2026-08-02T23:59:59-04:00").map(
+      (item) => item.id,
+    ),
+    [laundry.id],
+  );
+});
+
+test("a caller who names no horizon gets one at the moment the clock reports", () => {
+  const { ctx, principal, travelTo } = testHarness();
+  const laundry = createItem(ctx, principal, {
+    title: "Do the laundry",
+    schedule: { dueAt: "2026-08-02T23:59:00-04:00" },
+  });
+
+  travelTo("2026-08-02T16:40:00-04:00");
+  assert.deepEqual(dueItems(ctx, principal), []);
+
+  travelTo("2026-08-03T07:00:00-04:00");
+  assert.deepEqual(
+    dueItems(ctx, principal).map((item) => item.id),
+    [laundry.id],
+  );
+});
+
 test("completing a recurring Item clears it until the next Occurrence", () => {
   const { ctx, principal, bins } = withBins();
 

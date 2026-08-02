@@ -133,6 +133,29 @@ test("the next Occurrence is readable over HTTP", async () => {
   });
 });
 
+test("the horizon the agenda is asked for reaches the service over HTTP", async () => {
+  const { call } = await withServer();
+  const passport = (await (
+    await call("POST", "/items", {
+      body: {
+        title: "Renew passport",
+        schedule: { dueAt: "2026-03-01T00:00:00Z" },
+      },
+    })
+  ).json()) as { id: string };
+
+  // The harness clock reads 1 January, so nothing is due yet.
+  assert.deepEqual((await (await call("GET", "/due")).json()) as unknown, []);
+
+  const ahead = (await (
+    await call("GET", "/due?through=2026-03-02T00:00:00Z")
+  ).json()) as { id: string }[];
+  assert.deepEqual(
+    ahead.map((item) => item.id),
+    [passport.id],
+  );
+});
+
 test("an omitted optional Capability field reaches the service over HTTP", async () => {
   const { call } = await withServer();
 

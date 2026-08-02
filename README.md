@@ -59,10 +59,18 @@ outside any deploy directory (ADR 5). Nothing backs it up for you.
 One process on one VPS, run by systemd, with a reverse proxy in front of it
 terminating TLS (ADR 8). Everything below runs on the box, as root.
 
+The box needs Node 24 or later, the same as anywhere else. If its system node
+is older, do not replace it — anything else on the box is using it. Install 24
+somewhere of its own and point `TODO_NODE_DIR` at it:
+
+    mkdir -p /opt/node24 && curl -fsSL \
+      https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-x64.tar.xz \
+      | tar -xJ -C /opt/node24 --strip-components=1
+
 Once, to set the box up:
 
     adduser --system --group --home /opt/todo todo
-    mkdir -p /opt/todo/releases /var/lib/todo /var/backups/todo
+    mkdir -p /opt/todo/releases /var/lib/todo /var/backups/todo /etc/todo
     chown todo:todo /var/lib/todo /var/backups/todo
     git clone <url> /opt/todo/repo
 
@@ -70,11 +78,23 @@ Once, to set the box up:
                   /opt/todo/repo/deploy/todo-backup.service \
                   /opt/todo/repo/deploy/todo-backup.timer /etc/systemd/system/
     systemctl daemon-reload
-    systemctl enable --now todo todo-backup.timer
+    systemctl enable todo todo-backup.timer
+    systemctl start todo-backup.timer
 
-Settings live in `/etc/todo/todo.env`, which is not in the repository. The
-units default to `TODO_DB=/var/lib/todo/todo.db`, outside every directory a
-deploy writes to, so no deploy can remove it (ADR 5).
+Settings live in `/etc/todo/todo.env`, which is not in the repository. If Node
+24 is not the system node, that file is where you say so — `PATH` is what the
+units resolve `node` through, and `TODO_NODE_DIR` is what the deploy script
+uses:
+
+    PATH=/opt/node24/bin:/usr/local/bin:/usr/bin:/bin
+    TODO_NODE_DIR=/opt/node24/bin
+
+The units default to `TODO_DB=/var/lib/todo/todo.db`, outside every directory
+a deploy writes to, so no deploy can remove it (ADR 5).
+
+`todo` is enabled but not started here: there is nothing to start until the
+first deploy has put a release in place, and starting it early just spins.
+The deploy starts it.
 
 Then, for every release:
 

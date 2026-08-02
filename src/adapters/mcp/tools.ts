@@ -239,6 +239,11 @@ export const TOOLS: readonly Tool[] = [
         itemId: { type: "string" },
         title: { type: "string" },
         notes: { type: ["string", "null"] },
+        isTemplate: {
+          type: "boolean",
+          description:
+            "Turn this into a pattern to copy, or turn it back into live work.",
+        },
         ...CAPABILITY_PROPERTIES,
       },
       required: ["itemId"],

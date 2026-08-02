@@ -5,6 +5,7 @@ import {
   deleteItem,
   getItem,
   listItems,
+  reviseItem,
   setLabels,
   updateItem,
 } from "../../src/service/items.ts";
@@ -90,4 +91,21 @@ test("a title that is not text is refused rather than crashing", () => {
     () => createItem(ctx, principal, { title: 42 as unknown as string }),
     { code: "invalid" },
   );
+});
+
+test("an unrecognized Status filter is refused, whichever adapter asks", () => {
+  const { ctx, principal } = testHarness();
+
+  assert.throws(
+    () => listItems(ctx, principal, { status: "nonsense" as "captured" }),
+    { code: "invalid" },
+  );
+});
+
+test("an Item can be marked as a Template after the fact, and unmarked", () => {
+  const { ctx, principal } = testHarness();
+  const item = createItem(ctx, principal, { title: "Weekly review" });
+
+  assert.equal(reviseItem(ctx, principal, item.id, { isTemplate: true }).isTemplate, true);
+  assert.equal(reviseItem(ctx, principal, item.id, { isTemplate: false }).isTemplate, false);
 });

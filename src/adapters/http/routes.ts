@@ -52,7 +52,7 @@ export function routes(ctx: ServiceContext): Route[] {
       status: 200,
       body: listItems(ctx, principal, {
         ...optional("label", query.get("label")),
-        ...optional("status", status(query.get("status"))),
+        ...optional("status", query.get("status") as Status | null),
         ...optional("isTemplate", flag(query.get("isTemplate"))),
       }),
     })),
@@ -185,21 +185,6 @@ function at(query: URLSearchParams): string | undefined {
   return query.get("at") ?? undefined;
 }
 
-const STATUSES: readonly Status[] = [
-  "captured",
-  "promoted",
-  "started",
-  "completed",
-  "dropped",
-];
-
-function status(value: string | null): Status | null {
-  if (value === null) return null;
-  if (!STATUSES.includes(value as Status)) {
-    throw invalid(`status must be one of ${STATUSES.join(", ")}`);
-  }
-  return value as Status;
-}
 
 // The service does the validation. These helpers only check that the JSON has
 // the shape the service signature expects. A bad request fails here, before it

@@ -60,6 +60,14 @@ export type CreateItemInput = {
   instantiatedFrom?: string | null;
 };
 
+const STATUSES: readonly Status[] = [
+  "captured",
+  "promoted",
+  "started",
+  "completed",
+  "dropped",
+];
+
 export type ListItemsFilter = {
   label?: string;
   status?: Status;
@@ -180,6 +188,11 @@ export function listItems(
   }
 
   if (filter.status !== undefined) {
+    // Validated here rather than in an adapter, so both surfaces refuse a
+    // typo instead of one returning an empty list (ADR 4).
+    if (!STATUSES.includes(filter.status)) {
+      throw invalid(`status must be one of ${STATUSES.join(", ")}`);
+    }
     conditions.push("items.current_status = ?");
     bindings.push(filter.status);
   }
@@ -203,6 +216,8 @@ export function listItems(
 export type UpdateItemInput = {
   title?: string;
   notes?: string | null;
+  /** Turn an Item into a pattern to copy, or turn it back into live work. */
+  isTemplate?: boolean;
 };
 
 /**
@@ -219,11 +234,13 @@ export function updateItem(
 
   ctx.db
     .prepare(
-      "update items set title = ?, notes = ?, updated_at = ? where id = ? and owner_id = ?",
+      `update items set title = ?, notes = ?, is_template = ?, updated_at = ?
+        where id = ? and owner_id = ?`,
     )
     .run(
       input.title === undefined ? existing.title : cleanTitle(input.title),
       input.notes === undefined ? existing.notes : input.notes,
+      (input.isTemplate ?? existing.isTemplate) ? 1 : 0,
       ctx.now(),
       id,
       principal.id,
@@ -256,7 +273,11 @@ export function reviseItem(
   return transact(ctx.db, () => {
     getItem(ctx, principal, id);
 
-    if (given(input, "title") || given(input, "notes")) {
+    if (
+      given(input, "title") ||
+      given(input, "notes") ||
+      given(input, "isTemplate")
+    ) {
       updateItem(ctx, principal, id, input);
     }
     if (given(input, "labels")) {

@@ -8,8 +8,15 @@ import {
 } from "../../src/service/items.ts";
 import { testHarness } from "../support/service.ts";
 import type { RecurrenceRule } from "../../src/domain/recurrence.ts";
+import type { CreateItemInput } from "../../src/service/items.ts";
 
 const daily: RecurrenceRule = { kind: "schedule", every: 1, unit: "day" };
+const weekly: RecurrenceRule = { kind: "schedule", every: 1, unit: "week" };
+const dailyAfterCompletion: RecurrenceRule = {
+  kind: "completion",
+  every: 1,
+  unit: "day",
+};
 
 test("an Item with no Capabilities has none of them", () => {
   const { ctx, principal } = testHarness();
@@ -69,16 +76,105 @@ test("a Capability can be attached and removed after creation", () => {
   assert.equal(setReminder(ctx, principal, item.id, null).reminder, null);
 });
 
+test("a Schedule can carry a due date and no Recurrence Rule", () => {
+  const { ctx, principal } = testHarness();
+
+  const item = createItem(ctx, principal, {
+    title: "Do the laundry",
+    schedule: { dueAt: "2026-08-02T23:59:00-04:00" },
+  });
+
+  assert.deepEqual(item.schedule, {
+    dueAt: "2026-08-02T23:59:00-04:00",
+    rule: null,
+  });
+});
+
+test("a completion-anchored Recurrence Rule needs no due date", () => {
+  const { ctx, principal } = testHarness();
+
+  const item = createItem(ctx, principal, {
+    title: "Walk on the treadmill",
+    schedule: { rule: dailyAfterCompletion },
+  });
+
+  assert.deepEqual(item.schedule, {
+    dueAt: null,
+    rule: dailyAfterCompletion,
+  });
+});
+
+test("a Target can carry an amount and nothing else", () => {
+  const { ctx, principal } = testHarness();
+
+  const item = createItem(ctx, principal, {
+    title: "Walk on the treadmill",
+    target: { amount: 5 },
+  });
+
+  assert.deepEqual(item.target, { amount: 5, unit: null, deadline: null });
+});
+
+test("an absent optional field and an explicit null store the same thing", () => {
+  const { ctx, principal } = testHarness();
+  const monday = "2026-01-05T08:00:00Z";
+
+  /** The Capabilities an Item gets from one capture, without its identity. */
+  const captured = (input: Omit<CreateItemInput, "title">) => {
+    const item = createItem(ctx, principal, { title: "Anything", ...input });
+    return { schedule: item.schedule, target: item.target };
+  };
+
+  // schedule.dueAt, target.unit and target.deadline.
+  assert.deepEqual(
+    captured({ schedule: { rule: dailyAfterCompletion }, target: { amount: 5 } }),
+    captured({
+      schedule: { dueAt: null, rule: dailyAfterCompletion },
+      target: { amount: 5, unit: null, deadline: null },
+    }),
+  );
+
+  // schedule.rule.
+  assert.deepEqual(
+    captured({ schedule: { dueAt: monday } }),
+    captured({ schedule: { dueAt: monday, rule: null } }),
+  );
+
+  // rule.weekdays, the one optional field inside a Recurrence Rule.
+  assert.deepEqual(
+    captured({ schedule: { dueAt: monday, rule: weekly } }),
+    captured({ schedule: { dueAt: monday, rule: { ...weekly, weekdays: null } } }),
+  );
+});
+
 test("a Schedule that says nothing is rejected", () => {
+  const { ctx, principal } = testHarness();
+
+  // An empty Schedule says nothing, whether the caller sends null or omits it.
+  for (const schedule of [{ dueAt: null, rule: null }, {}]) {
+    assert.throws(
+      () => createItem(ctx, principal, { title: "Renew passport", schedule }),
+      {
+        code: "invalid",
+        message: "a Schedule needs a due date, a Recurrence Rule, or both",
+      },
+    );
+  }
+});
+
+test("a schedule-anchored Recurrence Rule with no due date is still rejected", () => {
   const { ctx, principal } = testHarness();
 
   assert.throws(
     () =>
       createItem(ctx, principal, {
-        title: "Renew passport",
-        schedule: { dueAt: null, rule: null },
+        title: "Take the bins out",
+        schedule: { rule: daily },
       }),
-    { code: "invalid" },
+    {
+      code: "invalid",
+      message: "a schedule-anchored rule needs a due date to measure from",
+    },
   );
 });
 

@@ -10,7 +10,13 @@ import {
 import { invalid, notFound } from "./errors.ts";
 import { checkPreset } from "./presets.ts";
 import type { Status } from "../domain/types.ts";
-import type { Reminder, Schedule, Target } from "./capabilities.ts";
+import type {
+  Reminder,
+  Schedule,
+  ScheduleInput,
+  Target,
+  TargetInput,
+} from "./capabilities.ts";
 import type { Principal, ServiceContext } from "./context.ts";
 
 /**
@@ -52,8 +58,8 @@ export type CreateItemInput = {
   labels?: readonly string[];
   /** Validated at creation and then forgotten. */
   preset?: string;
-  schedule?: Schedule | null;
-  target?: Target | null;
+  schedule?: ScheduleInput | null;
+  target?: TargetInput | null;
   reminder?: Reminder | null;
   isTemplate?: boolean;
   /** Set when this Item is an Instance produced from a Template. */
@@ -119,7 +125,7 @@ export function setSchedule(
   ctx: ServiceContext,
   principal: Principal,
   id: string,
-  schedule: Schedule | null,
+  schedule: ScheduleInput | null,
 ): Item {
   return withCapability(ctx, principal, id, () =>
     writeSchedule(ctx, id, schedule),
@@ -130,7 +136,7 @@ export function setTarget(
   ctx: ServiceContext,
   principal: Principal,
   id: string,
-  target: Target | null,
+  target: TargetInput | null,
 ): Item {
   return withCapability(ctx, principal, id, () => writeTarget(ctx, id, target));
 }
@@ -251,8 +257,8 @@ export function updateItem(
 
 export type ReviseItemInput = UpdateItemInput & {
   labels?: readonly string[];
-  schedule?: Schedule | null;
-  target?: Target | null;
+  schedule?: ScheduleInput | null;
+  target?: TargetInput | null;
   reminder?: Reminder | null;
 };
 

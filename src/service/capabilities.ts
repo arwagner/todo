@@ -8,11 +8,38 @@ export type Schedule = {
   rule: RecurrenceRule | null;
 };
 
+/**
+ * What a caller may send for a Schedule. An adapter gives the service parsed
+ * JSON, where an optional key is absent, not null. The two mean the same
+ * thing, so every optional field is optional here as well (ADR 4).
+ */
+export type ScheduleInput = {
+  dueAt?: string | null;
+  rule?: RecurrenceRuleInput | null;
+};
+
+/** What a caller may send for a Recurrence Rule. See `ScheduleInput`. */
+export type RecurrenceRuleInput =
+  | {
+      kind: "schedule";
+      every: number;
+      unit: RecurrenceUnit;
+      weekdays?: number[] | null;
+    }
+  | { kind: "completion"; every: number; unit: RecurrenceUnit };
+
 /** A quantity to reach and a deadline to reach it by. */
 export type Target = {
   amount: number;
   unit: string | null;
   deadline: string | null;
+};
+
+/** What a caller may send for a Target. See `ScheduleInput`. */
+export type TargetInput = {
+  amount: number;
+  unit?: string | null;
+  deadline?: string | null;
 };
 
 /** A time the Owner should be told. Recorded only. Nothing acts on it (ADR 7). */
@@ -35,7 +62,7 @@ export const NO_CAPABILITIES: Capabilities = {
 export function writeSchedule(
   ctx: ServiceContext,
   itemId: string,
-  schedule: Schedule | null,
+  schedule: ScheduleInput | null,
 ): void {
   ctx.db.prepare("delete from schedules where item_id = ?").run(itemId);
   if (schedule === null) return;
@@ -53,7 +80,7 @@ export function writeSchedule(
 export function writeTarget(
   ctx: ServiceContext,
   itemId: string,
-  target: Target | null,
+  target: TargetInput | null,
 ): void {
   ctx.db.prepare("delete from targets where item_id = ?").run(itemId);
   if (target === null) return;
@@ -132,23 +159,30 @@ export function loadCapabilities(
   return loaded;
 }
 
-function validateSchedule(schedule: Schedule): Schedule {
-  if (schedule.dueAt === null && schedule.rule === null) {
+function validateSchedule(schedule: ScheduleInput): Schedule {
+  const dueAt = schedule.dueAt ?? null;
+  const rule = schedule.rule ?? null;
+
+  if (dueAt === null && rule === null) {
     throw invalid("a Schedule needs a due date, a Recurrence Rule, or both");
   }
-  if (schedule.dueAt !== null && !isTimestamp(schedule.dueAt)) {
+  if (dueAt !== null && !isTimestamp(dueAt)) {
     throw invalid("schedule.dueAt must be an ISO 8601 timestamp");
   }
-  const rule = schedule.rule === null ? null : validateRule(schedule.rule);
-  if (rule !== null && rule.kind === "schedule" && schedule.dueAt === null) {
+  const validatedRule = rule === null ? null : validateRule(rule);
+  if (
+    validatedRule !== null &&
+    validatedRule.kind === "schedule" &&
+    dueAt === null
+  ) {
     throw invalid("a schedule-anchored rule needs a due date to measure from");
   }
-  return { dueAt: schedule.dueAt, rule };
+  return { dueAt, rule: validatedRule };
 }
 
 const UNITS: readonly RecurrenceUnit[] = ["day", "week", "month", "year"];
 
-export function validateRule(rule: RecurrenceRule): RecurrenceRule {
+export function validateRule(rule: RecurrenceRuleInput): RecurrenceRule {
   if (rule.kind !== "schedule" && rule.kind !== "completion") {
     throw invalid("a Recurrence Rule must be schedule- or completion-anchored");
   }
@@ -162,8 +196,8 @@ export function validateRule(rule: RecurrenceRule): RecurrenceRule {
     return { kind: "completion", every: rule.every, unit: rule.unit };
   }
 
-  const weekdays = rule.weekdays;
-  if (weekdays === undefined) {
+  const weekdays = rule.weekdays ?? null;
+  if (weekdays === null) {
     return { kind: "schedule", every: rule.every, unit: rule.unit };
   }
   if (rule.unit !== "week") {
@@ -180,17 +214,19 @@ export function validateRule(rule: RecurrenceRule): RecurrenceRule {
   };
 }
 
-function validateTarget(target: Target): Target {
+function validateTarget(target: TargetInput): Target {
+  const deadline = target.deadline ?? null;
+
   if (typeof target.amount !== "number" || !(target.amount > 0)) {
     throw invalid("target.amount must be greater than zero");
   }
-  if (target.deadline !== null && !isTimestamp(target.deadline)) {
+  if (deadline !== null && !isTimestamp(deadline)) {
     throw invalid("target.deadline must be an ISO 8601 timestamp");
   }
   return {
     amount: target.amount,
     unit: target.unit ?? null,
-    deadline: target.deadline ?? null,
+    deadline,
   };
 }
 

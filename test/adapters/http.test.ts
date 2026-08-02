@@ -133,6 +133,26 @@ test("the next Occurrence is readable over HTTP", async () => {
   });
 });
 
+test("an omitted optional Capability field reaches the service over HTTP", async () => {
+  const { call } = await withServer();
+
+  const created = await call("POST", "/items", {
+    body: {
+      title: "Walk on the treadmill",
+      schedule: { rule: { kind: "completion", every: 1, unit: "day" } },
+      target: { amount: 5 },
+    },
+  });
+
+  assert.equal(created.status, 201);
+  const item = (await created.json()) as { schedule: unknown; target: unknown };
+  assert.deepEqual(item.schedule, {
+    dueAt: null,
+    rule: { kind: "completion", every: 1, unit: "day" },
+  });
+  assert.deepEqual(item.target, { amount: 5, unit: null, deadline: null });
+});
+
 test("an unrecognized status filter is refused rather than returning nothing", async () => {
   const { call } = await withServer();
 

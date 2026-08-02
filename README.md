@@ -21,7 +21,7 @@ TypeScript directly, so there is no build step.
     src/auth/        tokens and the single authenticate() function
     src/adapters/    HTTP and MCP, both thin, both over the service
     src/cli/         administration on the box
-    deploy/          systemd units and the deploy script
+    deploy/          systemd units, and the two halves of the deploy script
     test/            tests, grouped by seam
 
 Both adapters call the same service functions. Neither one calls the other
@@ -57,7 +57,8 @@ outside any deploy directory (ADR 5). Nothing backs it up for you.
 ## Deploy
 
 One process on one VPS, run by systemd, with a reverse proxy in front of it
-terminating TLS (ADR 8). Everything below runs on the box, as root.
+terminating TLS (ADR 8). The deploy itself runs here, from this working copy,
+and pushes the code out to the box.
 
 The box needs Node 24 or later, the same as anywhere else. If its system node
 is older, do not replace it — anything else on the box is using it. Install 24
@@ -67,27 +68,34 @@ somewhere of its own and point `TODO_NODE_DIR` at it:
       https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-x64.tar.xz \
       | tar -xJ -C /opt/node24 --strip-components=1
 
-Once, to set the box up:
+Once, to set the box up. These commands run on the box, as root. The bare
+repository is what a deploy pushes to, and a release is unpacked out of it:
 
     adduser --system --group --home /opt/todo todo
     mkdir -p /opt/todo/releases /var/lib/todo /var/backups/todo /etc/todo
     chown todo:todo /var/lib/todo /var/backups/todo
-    git clone <url> /opt/todo/repo
+    git init --bare /srv/todo.git
 
-    install -m644 /opt/todo/repo/deploy/todo.service \
-                  /opt/todo/repo/deploy/todo-backup.service \
-                  /opt/todo/repo/deploy/todo-backup.timer /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable todo todo-backup.timer
-    systemctl start todo-backup.timer
+Then put the systemd units on the box and enable them. These commands run here:
+
+    scp deploy/todo.service deploy/todo-backup.service deploy/todo-backup.timer \
+        root@<host>:/etc/systemd/system/
+    ssh root@<host> 'systemctl daemon-reload &&
+                     systemctl enable todo todo-backup.timer &&
+                     systemctl start todo-backup.timer'
 
 Settings live in `/etc/todo/todo.env`, which is not in the repository. If Node
-24 is not the system node, that file is where you say so — `PATH` is what the
-units resolve `node` through, and `TODO_NODE_DIR` is what the deploy script
-uses:
+24 is not the system node, that file is where you say so. `PATH` is what the
+units resolve `node` through, and `TODO_NODE_DIR` is what the box side of the
+deploy uses:
 
     PATH=/opt/node24/bin:/usr/local/bin:/usr/bin:/bin
     TODO_NODE_DIR=/opt/node24/bin
+
+Say where this working copy deploys to in `deploy/target.env`, which is not in
+the repository either. Where a thing is deployed is not part of what it is:
+
+    TODO_DEPLOY_HOST=root@todo.example.com
 
 The units default to `TODO_DB=/var/lib/todo/todo.db`, outside every directory
 a deploy writes to, so no deploy can remove it (ADR 5).
@@ -96,15 +104,44 @@ a deploy writes to, so no deploy can remove it (ADR 5).
 first deploy has put a release in place, and starting it early just spins.
 The deploy starts it.
 
-Then, for every release:
+Then, for every release, from here:
 
-    /opt/todo/repo/deploy/deploy.sh main
+    deploy/deploy.sh
 
-That unpacks the revision to `/opt/todo/releases/<sha>`, takes a backup,
-migrates, points `/opt/todo/current` at it, restarts, and waits for
-`GET /health` to answer. If it never answers, the symlink goes back to the
-previous release and the service is restarted on that. Rolling back by hand is
-the same move:
+That pushes the revision to `/srv/todo.git` on the box, then sends
+`deploy/remote.sh` over ssh and runs it there as root. The box side unpacks the
+revision to `/opt/todo/releases/<sha>`, takes a backup, migrates, points
+`/opt/todo/current` at it, restarts, and waits for `GET /health` to answer. If
+it never answers, the symlink goes back to the previous release and the service
+is restarted on that.
+
+`remote.sh` goes over the wire on every run, so the box never runs an older
+copy of it than the one here. Nothing on the box pulls, which is what stops a
+deploy from shipping a revision other than the one you are looking at.
+
+The deploy ships the working tree as it stands, committed or not. A tree that
+differs from `HEAD` is written into a commit of its own, parented on `HEAD`,
+and that commit is what ships. Your branch, your index, and your working tree
+do not move. `.gitignore` decides what stays behind, which is what keeps
+`deploy/target.env`, the databases, and `node_modules` out of a release.
+
+The same tree on the same parent always produces the same revision. Deploying
+twice with nothing changed in between reuses the release instead of building a
+second copy of it.
+
+A revision that is already live stops the deploy, because deploying it again
+would only restart the service. Pass `--force` to mean it.
+
+To deploy a commit rather than the working tree, name it:
+
+    deploy/deploy.sh v1.2.0
+
+A deploy from a working tree is a real commit in `/srv/todo.git`, so `git show`
+on the box says exactly what shipped and how it differed from `HEAD`. That
+commit may be on no branch anywhere, which is the price of deploying work you
+have not committed.
+
+Rolling back by hand runs on the box:
 
     ln -sfn /opt/todo/releases/<sha> /opt/todo/current.new
     mv -Tf /opt/todo/current.new /opt/todo/current

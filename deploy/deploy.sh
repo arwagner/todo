@@ -1,53 +1,26 @@
 #!/usr/bin/env bash
 #
-# Deploys a revision to this box and, if it does not come up, puts back the one
-# that was running. Run it as root on the VPS:
+# Deploys the code in this working copy to the VPS. Run it here, not there:
 #
-#     /opt/todo/repo/deploy/deploy.sh [ref]
+#     deploy/deploy.sh [ref] [--force]
 #
-# The database lives outside every directory this script writes to, so nothing
-# here can remove it (ADR 5).
+# It pushes the revision to the box, then runs deploy/remote.sh over ssh to
+# unpack it, back up, migrate, move the symlink, restart, and check that the
+# service answers. If it does not answer, the box puts back the release that
+# was running.
+#
+# The box used to pull from a repository of its own, which meant a deploy could
+# read a revision older than the one in front of you and report success. The
+# push happens here now, so the code that ships is the code you are looking at.
 
 # -E so that the error trap below fires inside functions too.
 set -Eeuo pipefail
 
-ref=${1:-main}
-
-# Read the same settings the units read, so that this script and the running
-# service can never disagree about which database they mean. systemd's
-# EnvironmentFile is KEY=value, which is close enough to source.
-#
-# That file sets the PATH the *units* run with, which is not the PATH this
-# script needs: it runs as root and wants runuser and systemctl from /usr/sbin.
-# So the script's own PATH is put back afterwards, and the file's PATH reaches
-# the service the only way it should, through systemd.
-env_file=${TODO_ENV_FILE:-/etc/todo/todo.env}
-script_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-if [ -r "$env_file" ]; then
-  # shellcheck disable=SC1090
-  . "$env_file"
-fi
-PATH="$script_path"
-
-repo=${TODO_REPO:-/opt/todo/repo}
-releases=${TODO_RELEASES:-/opt/todo/releases}
-current=${TODO_CURRENT:-/opt/todo/current}
-backups=${TODO_BACKUPS:-/var/backups/todo}
-database=${TODO_DB:-/var/lib/todo/todo.db}
-health=${TODO_HEALTH_URL:-http://127.0.0.1:${PORT:-8787}/health}
-service=${TODO_SERVICE:-todo}
-user=${TODO_USER:-todo}
-keep=${TODO_KEEP_RELEASES:-5}
-
-# Where Node 24 lives. Not every box has it as the system node, and on a box
-# running other Node services replacing the system one is not on. Set
-# TODO_NODE_DIR in the env file and the units follow through PATH.
-node_dir=${TODO_NODE_DIR:-/usr/bin}
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 say() { printf '==> %s\n' "$*"; }
+die() { printf 'deploy: %s\n' "$*" >&2; exit 1; }
 
-# Report which step died rather than exiting mute, because half of these
-# commands are quiet when they succeed and quiet when they fail.
 on_error() {
   status=$?
   say "FAILED: $BASH_COMMAND (exit $status)"
@@ -55,106 +28,100 @@ on_error() {
 }
 trap on_error ERR
 
-# TODO_DB is passed explicitly. Without it the CLI would fall back to the todo
-# user's home directory, quietly create an empty database there, and back that
-# up instead of the real one. PATH carries the Node that npm's shebang finds.
-as_todo() {
-  runuser -u "$user" -- env \
-    PATH="$node_dir:/usr/local/bin:/usr/bin:/bin" \
-    TODO_DB="$database" "$@"
-}
+ref=""
+force=""
+for arg in "$@"; do
+  case "$arg" in
+    --force) force=1 ;;
+    -*) die "unknown option $arg" ;;
+    *)
+      [ -z "$ref" ] || die "give at most one ref"
+      ref=$arg
+      ;;
+  esac
+done
 
-say "fetching $ref"
-git -C "$repo" fetch --quiet --prune origin
-revision=$(git -C "$repo" rev-parse --verify --quiet "origin/$ref" || git -C "$repo" rev-parse --verify "$ref")
-release="$releases/$revision"
-say "revision $revision"
+# Which box, and as whom. This is a setting rather than a constant in the
+# repository, for the same reason /etc/todo/todo.env is not in the repository:
+# where a thing is deployed is not part of what it is.
+env_file=${TODO_DEPLOY_ENV:-$script_dir/target.env}
+if [ -r "$env_file" ]; then
+  # shellcheck disable=SC1090
+  . "$env_file"
+fi
+host=${TODO_DEPLOY_HOST:-}
+[ -n "$host" ] || die "set TODO_DEPLOY_HOST, in the environment or in $env_file"
 
-# Unpacking to a new directory and switching a symlink means the running
-# release is never edited in place, and going back is a symlink away.
+# The bare repository on the box. The push writes here and remote.sh unpacks
+# from here, so both halves have to mean the same path.
+git_dir=${TODO_GIT_DIR:-/srv/todo.git}
+
+root=$(cd -- "$script_dir/.." && pwd)
+
+# What ships. Naming a ref deploys that commit. Otherwise the deploy ships the
+# working tree as it stands on disk, committed or not.
 #
-# Built under another name and moved into place only once the dependencies are
-# in. A directory at $release therefore means a release that finished, and an
-# interrupted deploy cannot leave one behind for the next run to reuse.
-if [ -d "$release" ]; then
-  say "release already built, reusing it"
+# A release is still named by a git revision, because that name is what makes
+# an identical deploy reuse the release already built, and what a rollback
+# points back at. So a tree that differs from HEAD is written into a commit of
+# its own: the tree as it is, with HEAD as its parent. Your branch, your index,
+# and your working tree do not move. That commit exists to be deployed, and to
+# be read afterwards when you want to know what a box is actually running.
+if [ -n "$ref" ]; then
+  revision=$(git -C "$root" rev-parse --verify "$ref^{commit}") ||
+    die "cannot resolve $ref to a commit"
 else
-  staging="$release.incomplete"
-  rm -rf "$staging"
-  mkdir -p "$staging"
-  git -C "$repo" archive "$revision" | tar -x -C "$staging"
-  chown -R "$user:$user" "$staging"
-  say "installing dependencies"
-  # The cache goes inside the staging directory so that this does not depend
-  # on the todo user's home being writable, then leaves with it.
-  as_todo env npm_config_cache="$staging/.npm" \
-    "$node_dir/npm" --prefix "$staging" ci --omit=dev
-  rm -rf "$staging/.npm"
-  mv "$staging" "$release"
-fi
-
-# Before the schema moves, not after. A backup taken now is the one you want.
-# Named `todo-` so that the same timer that prunes the nightly backups prunes
-# these too, rather than letting them pile up on the disk holding the database.
-say "backing up"
-as_todo "$node_dir/node" "$release/src/cli/todo.ts" backup "$backups/todo-pre-deploy-$(date -u +%Y-%m-%dT%H%M%SZ)-${revision:0:12}.db"
-
-# Migrating before the restart means a bad migration fails here, with the old
-# release still serving, rather than in a restart loop.
-say "migrating"
-as_todo "$node_dir/node" "$release/src/cli/todo.ts" migrate
-
-# Only a symlink that resolves to a real directory is something to go back to.
-# `readlink -f` succeeds on a path that does not exist and echoes it back, so
-# taking it at its word on a first deploy points the symlink at itself and
-# leaves nothing that can ever start.
-previous=""
-if [ -L "$current" ]; then
-  candidate=$(readlink -f "$current" || true)
-  if [ -n "$candidate" ] && [ -d "$candidate" ] && [ "$candidate" != "$release" ]; then
-    previous="$candidate"
-  fi
-fi
-
-say "pointing $current at $revision"
-ln -sfn "$release" "$current.new"
-mv -Tf "$current.new" "$current"
-
-restart_and_check() {
-  systemctl restart "$service"
-  for _ in $(seq 30); do
-    if curl --fail --silent --show-error --max-time 2 "$health" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
-}
-
-say "restarting $service"
-if ! restart_and_check; then
-  if [ -n "$previous" ]; then
-    say "did not come up: going back to $(basename "$previous")"
-    ln -sfn "$previous" "$current.new"
-    mv -Tf "$current.new" "$current"
-    restart_and_check || say "the previous release did not come up either"
+  head=$(git -C "$root" rev-parse --verify HEAD)
+  if [ -z "$(git -C "$root" status --porcelain)" ]; then
+    revision=$head
   else
-    say "did not come up, and there is nothing to go back to"
+    say "the working tree differs from HEAD, and ships as it stands:"
+    git -C "$root" status --short
+    # An index of its own, so that staging the tree leaves yours alone.
+    index=$(mktemp "${TMPDIR:-/tmp}/todo-deploy-index.XXXXXXXX")
+    rm -f "$index"
+    trap 'rm -f "$index"' EXIT
+    # `add -A` against an empty index takes every file the working tree holds
+    # and .gitignore does not exclude. That is what keeps deploy/target.env,
+    # the databases, and node_modules out of the release.
+    GIT_INDEX_FILE=$index git -C "$root" add -A
+    tree=$(GIT_INDEX_FILE=$index git -C "$root" write-tree)
+    # Dated from HEAD rather than from now, so the same tree on the same parent
+    # is always the same revision. Two deploys with nothing changed in between
+    # then reuse the release instead of building a second copy of it.
+    stamp=$(git -C "$root" log -1 --format=%cI "$head")
+    revision=$(GIT_AUTHOR_DATE=$stamp GIT_COMMITTER_DATE=$stamp \
+      git -C "$root" commit-tree "$tree" -p "$head" \
+        -m "working tree, deployed on top of $head")
   fi
-  systemctl status "$service" --no-pager --lines=20 || true
-  exit 1
 fi
 
-# Keep $keep to roll back to, on top of the live one, and drop the rest.
-# Matching the live release by name rather than by path, so that a symlink
-# anywhere above it cannot make this fail to recognise it.
-say "pruning old releases"
-keeping=$(basename "$(readlink -f "$current")")
-find "$releases" -mindepth 1 -maxdepth 1 -type d ! -name "$keeping" -printf '%T@ %p\n' |
-  sort -rn | tail -n "+$((keep + 1))" | cut -d' ' -f2- |
-  while read -r old; do
-    say "removing $(basename "$old")"
-    rm -rf "$old"
-  done
+describe=$(git -C "$root" log -1 --format='%h %s' "$revision")
 
-say "deployed $revision"
+say "deploying $describe"
+say "to $host"
+
+# Pushing the revision itself rather than a branch name, so that the object on
+# the box is the one resolved above and not whatever a branch moved to since.
+# `main` on the box means the last revision deployed, and nothing reads it but
+# a person looking for that.
+#
+# Forced, because deploys do not form a line. Two deploys from a working tree
+# both sit on HEAD rather than on each other, and deploying an older ref on
+# purpose is an ordinary thing to do. The release directory is named by
+# revision, so what a box runs never depended on this ref.
+say "pushing to $git_dir"
+git push --force --quiet "$host:$git_dir" "$revision:refs/heads/main"
+
+# remote.sh goes over the wire on every deploy, so the box cannot run a stale
+# copy of it. It is written to a file rather than piped into `bash -s`, because
+# a script read from standard input loses the rest of itself to the first
+# command inside it that reads standard input.
+say "sending remote.sh"
+remote_script=$(ssh "$host" 'tmp=$(mktemp /tmp/todo-deploy.XXXXXXXX) && cat >"$tmp" && printf %s "$tmp"' \
+  <"$script_dir/remote.sh")
+[ -n "$remote_script" ] || die "could not put remote.sh on $host"
+
+# Removed on the way out whether or not the deploy worked, and the deploy's own
+# exit status is what this script exits with.
+ssh "$host" "TODO_FORCE='${force}' bash '$remote_script' '$revision'; status=\$?; rm -f '$remote_script'; exit \$status"

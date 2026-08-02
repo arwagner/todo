@@ -75,6 +75,17 @@ test("recording a Completion over HTTP moves the Status", async () => {
   assert.equal(fetched.status, "completed");
 });
 
+test("health is readable without a credential, and says nothing else", async () => {
+  const { call } = await withServer();
+
+  const response = await call("GET", "/health", { credential: null });
+
+  assert.equal(response.status, 200);
+  // Not `status`: CONTEXT.md gives that word to an Item's lifecycle state, and
+  // the same wire already uses it that way.
+  assert.deepEqual((await response.json()) as unknown, { ok: true });
+});
+
 test("a request with no credential gets nowhere", async () => {
   const { call } = await withServer();
 

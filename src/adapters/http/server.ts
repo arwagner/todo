@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { authenticate } from "../../auth/authenticate.ts";
 import { ServiceError } from "../../service/errors.ts";
+import { databaseReachable } from "../../service/health.ts";
 import { MethodNotAllowed, matchRoute } from "./router.ts";
 import { routes } from "./routes.ts";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
@@ -32,6 +33,19 @@ async function handle(
   response: ServerResponse,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://todo.invalid");
+
+  // The one route before authentication. A deploy script and a supervisor have
+  // to be able to ask whether the process came up, and neither of them holds a
+  // token (ADR 8). It answers for the process only, never about the data.
+  if (url.pathname === "/health") {
+    if (request.method !== "GET") {
+      send(response, 405, { error: "method not allowed" });
+      return;
+    }
+    const ok = databaseReachable(ctx);
+    send(response, ok ? 200 : 503, { ok });
+    return;
+  }
 
   // One middleware, one call. Nothing downstream knows tokens exist (ADR 6).
   const principal = authenticate(ctx, request);

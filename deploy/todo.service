@@ -1,0 +1,36 @@
+[Unit]
+Description=todo
+After=network.target
+
+[Service]
+Type=simple
+User=todo
+Group=todo
+
+# The deploy directory is a symlink to a release. Restarting picks up whatever
+# it points at now, which is how a rollback takes effect.
+WorkingDirectory=/opt/todo/current
+ExecStart=/usr/bin/node /opt/todo/current/src/main.ts
+
+# Defaults live here; the file overrides them and is not in the repository.
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+Environment=TODO_DB=/var/lib/todo/todo.db
+EnvironmentFile=-/etc/todo/todo.env
+
+Restart=always
+RestartSec=2
+
+# The database is the only thing this process may write, and it lives outside
+# the deploy directory so that no deploy can remove it (ADR 5).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/todo
+
+[Install]
+WantedBy=multi-user.target

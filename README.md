@@ -21,6 +21,7 @@ TypeScript directly, so there is no build step.
     src/auth/        tokens and the single authenticate() function
     src/adapters/    HTTP and MCP, both thin, both over the service
     src/cli/         administration on the box
+    deploy/          systemd units and the deploy script
     test/            tests, grouped by seam
 
 Both adapters call the same service functions. Neither one calls the other
@@ -36,7 +37,8 @@ machine, because there is no remote administrative endpoint (ADR 6).
 
 The token is printed once and never again. Storage keeps only a SHA-256 hash.
 
-Start the HTTP API:
+Start the HTTP API. It listens on `127.0.0.1:8787`; set `HOST` and `PORT` to
+move it. Binding a public interface is something you ask for (ADR 8).
 
     npm run serve
 
@@ -52,17 +54,73 @@ Run the MCP server over stdio. Set `TODO_TOKEN` to a minted token:
 The database file is `$TODO_DB`, or `~/.local/share/todo/todo.db`. Keep it
 outside any deploy directory (ADR 5). Nothing backs it up for you.
 
+## Deploy
+
+One process on one VPS, run by systemd, with a reverse proxy in front of it
+terminating TLS (ADR 8). Everything below runs on the box, as root.
+
+Once, to set the box up:
+
+    adduser --system --group --home /opt/todo todo
+    mkdir -p /opt/todo/releases /var/lib/todo /var/backups/todo
+    chown todo:todo /var/lib/todo /var/backups/todo
+    git clone <url> /opt/todo/repo
+
+    install -m644 /opt/todo/repo/deploy/todo.service \
+                  /opt/todo/repo/deploy/todo-backup.service \
+                  /opt/todo/repo/deploy/todo-backup.timer /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable --now todo todo-backup.timer
+
+Settings live in `/etc/todo/todo.env`, which is not in the repository. The
+units default to `TODO_DB=/var/lib/todo/todo.db`, outside every directory a
+deploy writes to, so no deploy can remove it (ADR 5).
+
+Then, for every release:
+
+    /opt/todo/repo/deploy/deploy.sh main
+
+That unpacks the revision to `/opt/todo/releases/<sha>`, takes a backup,
+migrates, points `/opt/todo/current` at it, restarts, and waits for
+`GET /health` to answer. If it never answers, the symlink goes back to the
+previous release and the service is restarted on that. Rolling back by hand is
+the same move:
+
+    ln -sfn /opt/todo/releases/<sha> /opt/todo/current.new
+    mv -Tf /opt/todo/current.new /opt/todo/current
+    systemctl restart todo
+
+Nothing here terminates TLS. Put a proxy in front of it — with Caddy that is
+the whole configuration:
+
+    todo.example.com {
+        reverse_proxy 127.0.0.1:8787
+    }
+
+`GET /health` is the only route that does not need a token. It answers for the
+process, not the data. Backups are a daily timer running `todo backup`, which
+is `VACUUM INTO` and does not stop the service; a deploy takes one first. Both
+are kept for 30 days, and nothing copies them off the box — that is still
+yours to arrange.
+
+Rolling back restores the code, not the schema (ADR 8). A release that
+migrated and then failed leaves the migration applied, so either migrations
+stay readable by the release before them, or you restore the backup the deploy
+took on its way past.
+
 ## Develop
 
     npm test          run every test
     npm run typecheck run tsc
 
-Tests live at four seams:
+Tests live at five seams:
 
 1. The service layer, against a real in-memory database. Most tests are here.
 2. The pure domain functions, with no database.
 3. `authenticate()`, the one place a credential becomes a Principal.
 4. The two adapters, smoke only.
+5. The deploy surface: how the process reads its configuration, and how the
+   database is copied off it.
 
 ## What this does not do
 

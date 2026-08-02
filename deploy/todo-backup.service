@@ -1,0 +1,23 @@
+[Unit]
+Description=todo database backup
+
+[Service]
+Type=oneshot
+User=todo
+Group=todo
+
+Environment=TODO_DB=/var/lib/todo/todo.db
+EnvironmentFile=-/etc/todo/todo.env
+
+# `%%` is a literal `%` to systemd. VACUUM INTO takes a consistent copy while
+# the service keeps serving, so this does not stop anything (ADR 8).
+ExecStart=/bin/sh -c 'exec /usr/bin/node /opt/todo/current/src/cli/todo.ts backup /var/backups/todo/todo-$(date -u +%%Y-%%m-%%dT%%H%%M%%SZ).db'
+
+# Nothing copies these off the box. That is still yours to arrange (ADR 5).
+ExecStartPost=/usr/bin/find /var/backups/todo -name 'todo-*.db' -mtime +30 -delete
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/todo /var/backups/todo

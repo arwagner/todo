@@ -153,6 +153,36 @@ test("an omitted optional Capability field reaches the service over HTTP", async
   assert.deepEqual(item.target, { amount: 5, unit: null, deadline: null });
 });
 
+test("a malformed Capability payload is a bad request, never a server error", async () => {
+  const { call } = await withServer();
+
+  const weekdays = await call("POST", "/items", {
+    body: {
+      title: "Take the bins out",
+      schedule: {
+        dueAt: "2026-01-05T08:00:00Z",
+        rule: { kind: "schedule", every: 1, unit: "week", weekdays: "monday" },
+      },
+    },
+  });
+
+  assert.equal(weekdays.status, 400);
+});
+
+test("a Capability route hands the payload to the service unexamined", async () => {
+  const { call } = await withServer();
+  const item = (await (
+    await call("POST", "/items", { body: { title: "Read books" } })
+  ).json()) as { id: string };
+
+  const target = await call("PUT", `/items/${item.id}/target`, { body: 12 });
+
+  // The service names the Capability. An adapter that checked the shape first
+  // would answer in its own vocabulary instead (ADR 4).
+  assert.equal(target.status, 400);
+  assert.match(((await target.json()) as { error: string }).error, /target/);
+});
+
 test("an unrecognized status filter is refused rather than returning nothing", async () => {
   const { call } = await withServer();
 

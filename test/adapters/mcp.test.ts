@@ -109,6 +109,24 @@ test("a service error comes back as a tool error rather than a crash", async () 
   assert.match(badPreset.text, /invalid/);
 });
 
+test("a malformed Capability payload comes back as a tool error, not a crash", async () => {
+  const { call } = await withClient();
+
+  const weekdays = await call("capture", {
+    title: "Take the bins out",
+    schedule: {
+      dueAt: "2026-01-05T08:00:00Z",
+      rule: { kind: "schedule", every: 1, unit: "week", weekdays: "monday" },
+    },
+  });
+  assert.equal(weekdays.isError, true);
+  assert.match(weekdays.text, /invalid/);
+
+  const target = await call("capture", { title: "Read books", target: 12 });
+  assert.equal(target.isError, true);
+  assert.match(target.text, /invalid/);
+});
+
 test("a revision that fails partway leaves the Item exactly as it was", async () => {
   const { call } = await withClient();
   const item = (

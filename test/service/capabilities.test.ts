@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   createItem,
+  listItems,
   setReminder,
   setSchedule,
   setTarget,
@@ -9,7 +10,9 @@ import {
 import { testHarness } from "../support/service.ts";
 import type { RecurrenceRule } from "../../src/domain/recurrence.ts";
 import type { CreateItemInput } from "../../src/service/items.ts";
+import type { Principal, ServiceContext } from "../../src/service/context.ts";
 
+const monday = "2026-01-05T08:00:00Z";
 const daily: RecurrenceRule = { kind: "schedule", every: 1, unit: "day" };
 const weekly: RecurrenceRule = { kind: "schedule", every: 1, unit: "week" };
 const dailyAfterCompletion: RecurrenceRule = {
@@ -117,7 +120,6 @@ test("a Target can carry an amount and nothing else", () => {
 
 test("an absent optional field and an explicit null store the same thing", () => {
   const { ctx, principal } = testHarness();
-  const monday = "2026-01-05T08:00:00Z";
 
   /** The Capabilities an Item gets from one capture, without its identity. */
   const captured = (input: Omit<CreateItemInput, "title">) => {
@@ -188,6 +190,93 @@ test("a Target must be a quantity worth reaching", () => {
         target: { amount: 0, unit: "books", deadline: null },
       }),
     { code: "invalid" },
+  );
+});
+
+/**
+ * Captures an Item from what an adapter can actually hand over: parsed JSON,
+ * of any shape at all. The service owes such a caller a ServiceError naming
+ * the field it got wrong, never a TypeError.
+ */
+function rejecting(ctx: ServiceContext, principal: Principal) {
+  return (input: Record<string, unknown>, message: string) =>
+    assert.throws(
+      () =>
+        createItem(ctx, principal, {
+          title: "Anything",
+          ...input,
+        } as unknown as CreateItemInput),
+      { code: "invalid", message },
+    );
+}
+
+/** A weekly rule carrying whatever the caller sent for its weekdays. */
+const weekdaysOf = (weekdays: unknown) => ({
+  schedule: { dueAt: monday, rule: { ...weekly, weekdays } },
+});
+
+test("a Capability that is not an object is rejected, and the message names it", () => {
+  const { ctx, principal } = testHarness();
+  const rejects = rejecting(ctx, principal);
+
+  rejects({ schedule: 5 }, "schedule must be an object or null");
+  rejects({ schedule: [] }, "schedule must be an object or null");
+  rejects({ schedule: "tomorrow" }, "schedule must be an object or null");
+  rejects({ target: 5 }, "target must be an object or null");
+  rejects({ target: [12] }, "target must be an object or null");
+  rejects({ reminder: "09:00" }, "reminder must be an object or null");
+  rejects(
+    { schedule: { dueAt: monday, rule: "daily" } },
+    "schedule.rule must be an object or null",
+  );
+});
+
+test("a Recurrence Rule whose weekdays are not an array is rejected, not crashed", () => {
+  const { ctx, principal } = testHarness();
+  const rejects = rejecting(ctx, principal);
+  const message =
+    "rule.weekdays must be an array of ISO weekdays, 1 (Monday) to 7";
+
+  rejects(weekdaysOf("monday"), message);
+  rejects(weekdaysOf(1), message);
+  rejects(weekdaysOf(["monday"]), message);
+});
+
+test("a Target unit that is not a string never reaches storage", () => {
+  const { ctx, principal } = testHarness();
+
+  rejecting(ctx, principal)(
+    { target: { amount: 5, unit: 5 } },
+    "target.unit must be a string or null",
+  );
+
+  assert.deepEqual(listItems(ctx, principal), []);
+});
+
+test("a time of the wrong type is rejected, and the message names the field", () => {
+  const { ctx, principal } = testHarness();
+  const rejects = rejecting(ctx, principal);
+
+  rejects(
+    { schedule: { dueAt: 5 } },
+    "schedule.dueAt must be an ISO 8601 timestamp",
+  );
+  rejects(
+    { target: { amount: 5, deadline: [monday] } },
+    "target.deadline must be an ISO 8601 timestamp",
+  );
+  rejects(
+    { reminder: { remindAt: 5 } },
+    "reminder.remindAt must be an ISO 8601 timestamp",
+  );
+});
+
+test("a Target amount of the wrong type reports the amount, not something else", () => {
+  const { ctx, principal } = testHarness();
+
+  rejecting(ctx, principal)(
+    { target: { amount: "five" } },
+    "target.amount must be a number greater than zero",
   );
 });
 

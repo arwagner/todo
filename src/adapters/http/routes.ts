@@ -32,6 +32,11 @@ import type {
   CreateItemInput,
   ReviseItemInput,
 } from "../../service/items.ts";
+import type {
+  Reminder,
+  ScheduleInput,
+  TargetInput,
+} from "../../service/capabilities.ts";
 import type { RecordEventInput } from "../../service/events.ts";
 import type { ServiceContext } from "../../service/context.ts";
 import type { Status } from "../../domain/types.ts";
@@ -77,19 +82,26 @@ export function routes(ctx: ServiceContext): Route[] {
       body: setLabels(ctx, principal, id(params), array(fields(body)["labels"])),
     })),
 
+    // A Capability payload goes to the service as it arrived. Checking its
+    // shape here would name the field twice, in two vocabularies (ADR 4).
     route("PUT", "/items/:id/schedule", ({ principal, params, body }) => ({
       status: 200,
-      body: setSchedule(ctx, principal, id(params), nullableObject(body)),
+      body: setSchedule(
+        ctx,
+        principal,
+        id(params),
+        body as ScheduleInput | null,
+      ),
     })),
 
     route("PUT", "/items/:id/target", ({ principal, params, body }) => ({
       status: 200,
-      body: setTarget(ctx, principal, id(params), nullableObject(body)),
+      body: setTarget(ctx, principal, id(params), body as TargetInput | null),
     })),
 
     route("PUT", "/items/:id/reminder", ({ principal, params, body }) => ({
       status: 200,
-      body: setReminder(ctx, principal, id(params), nullableObject(body)),
+      body: setReminder(ctx, principal, id(params), body as Reminder | null),
     })),
 
     route("GET", "/items/:id/events", ({ principal, params }) => ({
@@ -195,11 +207,6 @@ function fields<T = Record<string, unknown>>(body: unknown): T {
     throw invalid("expected a JSON object");
   }
   return body as T;
-}
-
-function nullableObject<T>(body: unknown): T | null {
-  if (body === null) return null;
-  return fields(body) as T;
 }
 
 function array(value: unknown): string[] {

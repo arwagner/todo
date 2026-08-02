@@ -333,7 +333,3 @@ function required(args: Record<string, unknown>, key: string): string {
 function string(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
-
-function has(args: Record<string, unknown>, key: string): boolean {
-  return Object.hasOwn(args, key) && args[key] !== undefined;
-}

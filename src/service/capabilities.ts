@@ -101,12 +101,10 @@ export function writeReminder(
   ctx.db.prepare("delete from reminders where item_id = ?").run(itemId);
   if (reminder === null) return;
 
-  if (!isTimestamp(reminder.remindAt)) {
-    throw invalid("reminder.remindAt must be an ISO 8601 timestamp");
-  }
+  const validated = validateReminder(reminder);
   ctx.db
     .prepare("insert into reminders (item_id, remind_at) values (?, ?)")
-    .run(itemId, reminder.remindAt);
+    .run(itemId, validated.remindAt);
 }
 
 /** Loads every Capability for a batch of Items in three queries. */
@@ -159,15 +157,20 @@ export function loadCapabilities(
   return loaded;
 }
 
-function validateSchedule(schedule: ScheduleInput): Schedule {
-  const dueAt = schedule.dueAt ?? null;
-  const rule = schedule.rule ?? null;
+/**
+ * The service does not trust its callers. An adapter hands over parsed JSON,
+ * which can be any shape at all, so every field below is read off `unknown`.
+ * A caller that sends the wrong shape must get a ServiceError naming the field
+ * it got wrong, never a TypeError, because only the first one becomes a
+ * sensible status code (ADR 4).
+ */
+function validateSchedule(input: unknown): Schedule {
+  const schedule = fieldsOf("schedule", input);
+  const dueAt = timestampOrNull("schedule.dueAt", schedule["dueAt"]);
+  const rule = schedule["rule"] ?? null;
 
   if (dueAt === null && rule === null) {
     throw invalid("a Schedule needs a due date, a Recurrence Rule, or both");
-  }
-  if (dueAt !== null && !isTimestamp(dueAt)) {
-    throw invalid("schedule.dueAt must be an ISO 8601 timestamp");
   }
   const validatedRule = rule === null ? null : validateRule(rule);
   if (
@@ -182,54 +185,95 @@ function validateSchedule(schedule: ScheduleInput): Schedule {
 
 const UNITS: readonly RecurrenceUnit[] = ["day", "week", "month", "year"];
 
-export function validateRule(rule: RecurrenceRuleInput): RecurrenceRule {
-  if (rule.kind !== "schedule" && rule.kind !== "completion") {
+function validateRule(input: unknown): RecurrenceRule {
+  const rule = fieldsOf("schedule.rule", input);
+  const kind = rule["kind"];
+  const every = rule["every"];
+  const unit = rule["unit"];
+
+  if (kind !== "schedule" && kind !== "completion") {
     throw invalid("a Recurrence Rule must be schedule- or completion-anchored");
   }
-  if (!Number.isInteger(rule.every) || rule.every < 1) {
+  if (typeof every !== "number" || !Number.isInteger(every) || every < 1) {
     throw invalid("rule.every must be a positive whole number");
   }
-  if (!UNITS.includes(rule.unit)) {
+  if (!isUnit(unit)) {
     throw invalid(`rule.unit must be one of ${UNITS.join(", ")}`);
   }
-  if (rule.kind === "completion") {
-    return { kind: "completion", every: rule.every, unit: rule.unit };
+  if (kind === "completion") {
+    return { kind: "completion", every, unit };
   }
 
-  const weekdays = rule.weekdays ?? null;
+  const weekdays = rule["weekdays"] ?? null;
   if (weekdays === null) {
-    return { kind: "schedule", every: rule.every, unit: rule.unit };
+    return { kind: "schedule", every, unit };
   }
-  if (rule.unit !== "week") {
+  if (unit !== "week") {
     throw invalid("rule.weekdays only applies to weekly rules");
   }
-  if (weekdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) {
-    throw invalid("rule.weekdays must be ISO weekdays, 1 (Monday) to 7");
+  if (
+    !Array.isArray(weekdays) ||
+    weekdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)
+  ) {
+    throw invalid(
+      "rule.weekdays must be an array of ISO weekdays, 1 (Monday) to 7",
+    );
+  }
+  return { kind: "schedule", every, unit, weekdays: [...weekdays] };
+}
+
+function validateTarget(input: unknown): Target {
+  const target = fieldsOf("target", input);
+  const amount = target["amount"];
+
+  if (typeof amount !== "number" || !(amount > 0)) {
+    throw invalid("target.amount must be a number greater than zero");
   }
   return {
-    kind: "schedule",
-    every: rule.every,
-    unit: rule.unit,
-    weekdays: [...weekdays],
+    amount,
+    unit: stringOrNull("target.unit", target["unit"]),
+    deadline: timestampOrNull("target.deadline", target["deadline"]),
   };
 }
 
-function validateTarget(target: TargetInput): Target {
-  const deadline = target.deadline ?? null;
+function validateReminder(input: unknown): Reminder {
+  const reminder = fieldsOf("reminder", input);
 
-  if (typeof target.amount !== "number" || !(target.amount > 0)) {
-    throw invalid("target.amount must be greater than zero");
+  if (!isTimestamp(reminder["remindAt"])) {
+    throw invalid("reminder.remindAt must be an ISO 8601 timestamp");
   }
-  if (deadline !== null && !isTimestamp(deadline)) {
-    throw invalid("target.deadline must be an ISO 8601 timestamp");
+  return { remindAt: reminder["remindAt"] };
+}
+
+/** Reads a Capability payload, naming it if the caller sent something else. */
+function fieldsOf(field: string, value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw invalid(`${field} must be an object or null`);
   }
-  return {
-    amount: target.amount,
-    unit: target.unit ?? null,
-    deadline,
-  };
+  return value as Record<string, unknown>;
+}
+
+/** An absent key and an explicit null both mean "not set" (ADR 4). */
+function stringOrNull(field: string, value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string") {
+    throw invalid(`${field} must be a string or null`);
+  }
+  return value;
+}
+
+function timestampOrNull(field: string, value: unknown): string | null {
+  if (value == null) return null;
+  if (!isTimestamp(value)) {
+    throw invalid(`${field} must be an ISO 8601 timestamp`);
+  }
+  return value;
 }
 
 export function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isUnit(value: unknown): value is RecurrenceUnit {
+  return UNITS.some((unit) => unit === value);
 }

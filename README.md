@@ -194,4 +194,4 @@ where your day ends is yours to say.
 
 ## Reviews
 
-Put the `agent:review` label on a pull request to have the aint-farm factory review it. It fixes what it can on the branch and leaves the rest as comments.
+Put the `agent:review` label on a pull request to have the aint-farm factory review it. It may push fixes to the branch, and leaves what it does not fix as comments.

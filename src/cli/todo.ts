@@ -4,13 +4,20 @@ import { databasePath } from "../db/location.ts";
 import { openDatabase } from "../db/open.ts";
 import { listTokens, mintToken, revokeToken } from "../auth/tokens.ts";
 import { productionContext } from "../service/context.ts";
-import { createPrincipal, listPrincipals } from "../service/principals.ts";
+import { ServiceError } from "../service/errors.ts";
+import {
+  createPrincipal,
+  listPrincipals,
+  renamePrincipal,
+} from "../service/principals.ts";
 import type { Principal, ServiceContext } from "../service/context.ts";
 
 const USAGE = `todo - administration for the todo service
 
   todo principals add <name>          create a Principal
   todo principals list                list Principals
+  todo principals rename <principal> <new name>
+                                      rename a Principal
   todo tokens mint <principal> <name> mint a token, printed once
   todo tokens list <principal>        list a Principal's tokens
   todo tokens revoke <principal> <id> revoke a token
@@ -62,6 +69,26 @@ function main(argv: readonly string[]): void {
     for (const principal of listPrincipals(context())) {
       process.stdout.write(`${principal.id}  ${principal.name}\n`);
     }
+    return;
+  }
+
+  if (group === "principals" && action === "rename") {
+    const [reference, name] = rest;
+    if (reference === undefined || name === undefined) {
+      fail("usage: todo principals rename <principal> <new name>");
+    }
+    const ctx = context();
+    const { id } = resolvePrincipal(ctx, reference);
+    // The rules on names are the service's. A refusal is one readable line on
+    // stderr, like every other refusal here, rather than a stack trace.
+    let principal: Principal;
+    try {
+      principal = renamePrincipal(ctx, id, name);
+    } catch (error) {
+      if (error instanceof ServiceError) fail(error.message);
+      throw error;
+    }
+    process.stdout.write(`${principal.id}  ${principal.name}\n`);
     return;
   }
 

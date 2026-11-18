@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
  * stdout and stderr and how it exits are its interface.
  */
 const cli = fileURLToPath(new URL("../../src/cli/todo.ts", import.meta.url));
+const usage = /^todo - administration for the todo service/;
 
 function todo(...args: string[]) {
   const directory = mkdtempSync(join(tmpdir(), "todo-cli-"));
@@ -29,7 +30,7 @@ for (const flag of ["-h", "--help", "help"]) {
     const result = todo(flag);
 
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /^todo - administration for the todo service/);
+    assert.match(result.stdout, usage);
     assert.equal(result.stderr, "");
   });
 }
@@ -39,5 +40,5 @@ test("an unknown command prints the usage to stderr and fails", () => {
 
   assert.equal(result.status, 1);
   assert.equal(result.stdout, "");
-  assert.match(result.stderr, /^todo - administration for the todo service/);
+  assert.match(result.stderr, usage);
 });

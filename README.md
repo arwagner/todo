@@ -4,7 +4,8 @@ A personal work-tracking system. It records things you intend to do, the shape
 of how they repeat, and the history of what you actually did.
 
 `CONTEXT.md` defines the language. `docs/adr/` records the decisions and why
-they were made. Read those first. This file only says how to run the code.
+they were made. Read those first. This file only says how to run the code, and
+how to have a change reviewed.
 
 ## Requirements
 

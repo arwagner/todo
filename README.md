@@ -191,3 +191,7 @@ due at or before it, so `GET /due` and the `agenda` tool both take `through`.
 Work due at 23:59 is not on the agenda you ask for at 16:40. To see the rest of
 today, pass the end of your own day. Nothing here holds a timezone for you, so
 where your day ends is yours to say.
+
+## Reviews
+
+Put the `agent:review` label on a pull request to have the aint-farm factory review it. It fixes what it can on the branch and leaves the rest as comments.

@@ -1,0 +1,10 @@
+# aint-farm, the software factory: what its runs check and which tasks it runs here.
+# Format: https://github.com/arwagner/aint-farm/blob/main/docs/factory-yml.md
+schemaVersion: 1
+checks:
+  - npm ci
+  - npm run typecheck
+  - npm test
+agent: claude
+tasks:
+  review: {}

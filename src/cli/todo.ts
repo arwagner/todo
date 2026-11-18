@@ -45,7 +45,7 @@ function context(options: { migrate?: boolean } = {}): ServiceContext {
 
 function main(argv: readonly string[]): void {
   const [group, action, ...rest] = argv;
-  if (group === undefined || group === "help" || group === "--help") {
+  if (group === undefined || group === "help" || group === "--help" || group === "-h") {
     process.stdout.write(USAGE);
     return;
   }

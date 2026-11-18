@@ -1,0 +1,28 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const cli = fileURLToPath(new URL("../../src/cli/todo.ts", import.meta.url));
+
+function run(...args: string[]) {
+  return spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+}
+
+for (const flag of ["-h", "--help", "help"]) {
+  test(`todo ${flag} prints the usage and succeeds`, () => {
+    const result = run(flag);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^todo - administration for the todo service/);
+    assert.equal(result.stderr, "");
+  });
+}
+
+test("an unknown command still prints the usage to stderr and fails", () => {
+  const result = run("frobnicate");
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /^todo - administration for the todo service/);
+});

@@ -8,7 +8,11 @@ import { fileURLToPath } from "node:url";
 
 const CLI = fileURLToPath(new URL("../../src/cli/todo.ts", import.meta.url));
 
-/** Runs the CLI against a throwaway database, so no test touches a real one. */
+/**
+ * Seam 6: the `todo` administration command. It is the only way to create a
+ * Principal or mint a token (ADR 6), so it is run as a real process against a
+ * throwaway database, exactly as an operator would run it.
+ */
 function todo(...args: string[]) {
   const directory = mkdtempSync(join(tmpdir(), "todo-cli-"));
   test.after(() => rmSync(directory, { recursive: true, force: true }));

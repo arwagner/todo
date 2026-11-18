@@ -43,9 +43,11 @@ function context(options: { migrate?: boolean } = {}): ServiceContext {
   return productionContext(openDatabase(databasePath(), options));
 }
 
+const HELP = new Set(["help", "--help", "-h"]);
+
 function main(argv: readonly string[]): void {
   const [group, action, ...rest] = argv;
-  if (group === undefined || group === "help" || group === "--help") {
+  if (group === undefined || HELP.has(group)) {
     process.stdout.write(USAGE);
     return;
   }

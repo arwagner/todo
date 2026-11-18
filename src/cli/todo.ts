@@ -37,6 +37,11 @@ function resolvePrincipal(ctx: ServiceContext, reference: string): Principal {
   return candidates[0] as Principal;
 }
 
+/** One line per Principal, the same for add, list and rename. */
+function printPrincipal(principal: Principal): void {
+  process.stdout.write(`${principal.id}  ${principal.name}\n`);
+}
+
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
   process.exit(1);
@@ -61,13 +66,13 @@ function main(argv: readonly string[]): void {
     const name = rest[0];
     if (name === undefined) fail("usage: todo principals add <name>");
     const principal = createPrincipal(context(), name);
-    process.stdout.write(`${principal.id}  ${principal.name}\n`);
+    printPrincipal(principal);
     return;
   }
 
   if (group === "principals" && action === "list") {
     for (const principal of listPrincipals(context())) {
-      process.stdout.write(`${principal.id}  ${principal.name}\n`);
+      printPrincipal(principal);
     }
     return;
   }
@@ -83,7 +88,7 @@ function main(argv: readonly string[]): void {
     // operator's mistake, so it is one line on stderr, not a stack trace.
     try {
       const principal = renamePrincipal(ctx, id, name);
-      process.stdout.write(`${principal.id}  ${principal.name}\n`);
+      printPrincipal(principal);
     } catch (error) {
       if (error instanceof ServiceError) fail(error.message);
       throw error;

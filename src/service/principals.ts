@@ -1,3 +1,4 @@
+import { transact } from "../db/transact.ts";
 import { conflict, notFound } from "./errors.ts";
 import { requiredText } from "./text.ts";
 import type { Principal, ServiceContext } from "./context.ts";
@@ -19,18 +20,22 @@ export function renamePrincipal(
   id: string,
   name: unknown,
 ): Principal {
-  const principal = getPrincipal(ctx, id);
-  const trimmed = requiredText(name, "a Principal needs a name");
-  const clash = ctx.db
-    .prepare("select 1 from principals where name = ? and id <> ?")
-    .get(trimmed, principal.id);
-  if (clash !== undefined) {
-    throw conflict(`another Principal is already named "${trimmed}"`);
-  }
-  ctx.db
-    .prepare("update principals set name = ? where id = ?")
-    .run(trimmed, principal.id);
-  return { id: principal.id, name: trimmed };
+  // The schema does not make names unique, so the check and the write share
+  // one transaction rather than letting another writer slip between them.
+  return transact(ctx.db, () => {
+    const principal = getPrincipal(ctx, id);
+    const trimmed = requiredText(name, "a Principal needs a name");
+    const clash = ctx.db
+      .prepare("select 1 from principals where name = ? and id <> ?")
+      .get(trimmed, principal.id);
+    if (clash !== undefined) {
+      throw conflict(`another Principal is already named "${trimmed}"`);
+    }
+    ctx.db
+      .prepare("update principals set name = ? where id = ?")
+      .run(trimmed, principal.id);
+    return { id: principal.id, name: trimmed };
+  });
 }
 
 export function getPrincipal(ctx: ServiceContext, id: string): Principal {

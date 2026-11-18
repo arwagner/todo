@@ -7,5 +7,7 @@ checks:
   - npm test
 agent: claude
 tasks:
-  review:
-    agent: codex
+  explore: {}
+  implement: {}
+  implement-spec: {}
+  review: {}

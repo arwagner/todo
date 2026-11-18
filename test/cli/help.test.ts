@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const cli = fileURLToPath(new URL("../../src/cli/todo.ts", import.meta.url));
@@ -16,6 +19,30 @@ for (const flag of ["-h", "--help", "help"]) {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /^todo - administration for the todo service/);
     assert.equal(result.stderr, "");
+  });
+}
+
+for (const args of [
+  ["tokens", "-h"],
+  ["principals", "add", "-h"],
+  ["backup", "--help"],
+  ["migrate", "-h"],
+]) {
+  test(`todo ${args.join(" ")} prints the usage and touches nothing`, () => {
+    const dir = mkdtempSync(join(tmpdir(), "todo-help-"));
+    try {
+      const result = spawnSync(process.execPath, [cli, ...args], {
+        encoding: "utf8",
+        cwd: dir,
+        env: { ...process.env, TODO_DB: join(dir, "todo.db") },
+      });
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /^todo - administration for the todo service/);
+      assert.deepEqual(readdirSync(dir), []);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 }
 

@@ -43,9 +43,15 @@ function context(options: { migrate?: boolean } = {}): ServiceContext {
   return productionContext(openDatabase(databasePath(), options));
 }
 
+/**
+ * A help flag anywhere asks for help, so `todo backup -h` prints the usage
+ * rather than copying the database to a file named `-h`.
+ */
+const HELP_FLAGS: ReadonlySet<string> = new Set(["-h", "--help"]);
+
 function main(argv: readonly string[]): void {
   const [group, action, ...rest] = argv;
-  if (group === undefined || group === "help" || group === "--help" || group === "-h") {
+  if (group === undefined || group === "help" || argv.some((arg) => HELP_FLAGS.has(arg))) {
     process.stdout.write(USAGE);
     return;
   }

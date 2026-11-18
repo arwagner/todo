@@ -17,7 +17,7 @@ export function createPrincipal(ctx: ServiceContext, name: string): Principal {
 export function renamePrincipal(
   ctx: ServiceContext,
   id: string,
-  name: string,
+  name: unknown,
 ): Principal {
   const principal = getPrincipal(ctx, id);
   const trimmed = requiredText(name, "a Principal needs a name");

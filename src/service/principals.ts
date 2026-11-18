@@ -1,4 +1,5 @@
-import { conflict, invalid, notFound } from "./errors.ts";
+import { conflict, notFound } from "./errors.ts";
+import { requiredText } from "./text.ts";
 import type { Principal, ServiceContext } from "./context.ts";
 
 export function createPrincipal(ctx: ServiceContext, name: string): Principal {
@@ -19,8 +20,7 @@ export function renamePrincipal(
   name: string,
 ): Principal {
   const principal = getPrincipal(ctx, id);
-  const trimmed = name.trim();
-  if (trimmed === "") throw invalid("a Principal needs a name");
+  const trimmed = requiredText(name, "a Principal needs a name");
   const clash = ctx.db
     .prepare("select 1 from principals where name = ? and id <> ?")
     .get(trimmed, principal.id);

@@ -76,6 +76,16 @@ test("an empty or whitespace-only name is invalid", () => {
   assert.equal(getPrincipal(ctx, principal.id).name, principal.name);
 });
 
+test("a name that is not text is refused rather than crashing", () => {
+  const { ctx, principal } = testHarness();
+
+  assert.throws(
+    () => renamePrincipal(ctx, principal.id, 42 as unknown as string),
+    hasCode("invalid"),
+  );
+  assert.equal(getPrincipal(ctx, principal.id).name, principal.name);
+});
+
 test("renaming an unknown Principal is not found", () => {
   const { ctx } = testHarness();
 

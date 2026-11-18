@@ -9,6 +9,7 @@ import {
 } from "./capabilities.ts";
 import { invalid, notFound } from "./errors.ts";
 import { checkPreset } from "./presets.ts";
+import { requiredText } from "./text.ts";
 import type { Status } from "../domain/types.ts";
 import type {
   Reminder,
@@ -347,16 +348,8 @@ function writeLabels(
   }
 }
 
-/**
- * The service does not trust its callers. An adapter that hands over a title
- * of the wrong type must get a ServiceError, not a TypeError, because only the
- * first one becomes a sensible status code.
- */
 function cleanTitle(title: unknown): string {
-  if (typeof title !== "string" || title.trim() === "") {
-    throw invalid("an Item needs a title");
-  }
-  return title.trim();
+  return requiredText(title, "an Item needs a title");
 }
 
 export function touch(ctx: ServiceContext, id: string): void {

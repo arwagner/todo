@@ -1,4 +1,5 @@
-import { notFound } from "./errors.ts";
+import { conflict, notFound } from "./errors.ts";
+import { requiredText } from "./text.ts";
 import type { Principal, ServiceContext } from "./context.ts";
 
 export function createPrincipal(ctx: ServiceContext, name: string): Principal {
@@ -7,6 +8,29 @@ export function createPrincipal(ctx: ServiceContext, name: string): Principal {
     .prepare("insert into principals (id, name, created_at) values (?, ?, ?)")
     .run(principal.id, principal.name, ctx.now());
   return principal;
+}
+
+/**
+ * Commands resolve a Principal by id or exact name, so a rename refuses a name
+ * another Principal already has. The name is trimmed, as Item titles are.
+ */
+export function renamePrincipal(
+  ctx: ServiceContext,
+  id: string,
+  name: string,
+): Principal {
+  const principal = getPrincipal(ctx, id);
+  const trimmed = requiredText(name, "a Principal needs a name");
+  const clash = ctx.db
+    .prepare("select 1 from principals where name = ? and id <> ?")
+    .get(trimmed, principal.id);
+  if (clash !== undefined) {
+    throw conflict(`another Principal is already named "${trimmed}"`);
+  }
+  ctx.db
+    .prepare("update principals set name = ? where id = ?")
+    .run(trimmed, principal.id);
+  return { id: principal.id, name: trimmed };
 }
 
 export function getPrincipal(ctx: ServiceContext, id: string): Principal {

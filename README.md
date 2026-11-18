@@ -170,7 +170,7 @@ took on its way past.
     npm test          run every test
     npm run typecheck run tsc
 
-Tests live at five seams:
+Tests live at six seams:
 
 1. The service layer, against a real in-memory database. Most tests are here.
 2. The pure domain functions, with no database.
@@ -178,6 +178,7 @@ Tests live at five seams:
 4. The two adapters, smoke only.
 5. The deploy surface: how the process reads its configuration, and how the
    database is copied off it.
+6. The administration CLI, run as a process: what it prints and how it exits.
 
 ## What this does not do
 

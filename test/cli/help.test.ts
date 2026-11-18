@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * Seam 6: the administration CLI. Its contract is what it prints and the code
+ * it exits with, so it is run as a process rather than called.
+ */
 const cli = fileURLToPath(new URL("../../src/cli/todo.ts", import.meta.url));
 
 function run(...args: string[]) {

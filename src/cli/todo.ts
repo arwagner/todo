@@ -21,6 +21,9 @@ const USAGE = `todo - administration for the todo service
 The database is $TODO_DB, or ~/.local/share/todo/todo.db.
 `;
 
+/** The groups whose second word is an action rather than an argument. */
+const GROUPS_WITH_ACTIONS = new Set(["principals", "tokens"]);
+
 function resolvePrincipal(ctx: ServiceContext, reference: string): Principal {
   const candidates = listPrincipals(ctx).filter(
     (principal) => principal.id === reference || principal.name === reference,
@@ -122,7 +125,13 @@ function main(argv: readonly string[]): void {
     return;
   }
 
-  fail(USAGE);
+  // A known group with a bad or missing action is named with what followed it,
+  // so `todo tokens bogus` says "tokens bogus" rather than just "tokens".
+  const typed =
+    GROUPS_WITH_ACTIONS.has(group) && action !== undefined
+      ? `${group} ${action}`
+      : group;
+  fail(`unknown command "${typed}"\n\n${USAGE}`);
 }
 
 main(process.argv.slice(2));

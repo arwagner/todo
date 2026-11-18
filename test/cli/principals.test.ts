@@ -1,10 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { scratchDirectory } from "../support/scratch.ts";
 
 /**
  * Seam 6: the admin CLI, run as a real process against a throwaway database,
@@ -14,9 +13,7 @@ import { fileURLToPath } from "node:url";
 const CLI = fileURLToPath(new URL("../../src/cli/todo.ts", import.meta.url));
 
 function scratchDatabase(): string {
-  const directory = mkdtempSync(join(tmpdir(), "todo-cli-"));
-  test.after(() => rmSync(directory, { recursive: true, force: true }));
-  return join(directory, "todo.db");
+  return join(scratchDirectory("cli"), "todo.db");
 }
 
 function todo(database: string, ...args: string[]) {

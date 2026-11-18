@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { backupDatabase } from "../../src/db/backup.ts";
 import { openDatabase } from "../../src/db/open.ts";
 import { productionContext } from "../../src/service/context.ts";
 import { createItem, listItems } from "../../src/service/items.ts";
+import { scratchDirectory } from "../support/scratch.ts";
 import { testHarness } from "../support/service.ts";
 
 /**
@@ -15,9 +15,7 @@ import { testHarness } from "../support/service.ts";
  * deliberate arrangement, so it is tested against real files.
  */
 function scratch(): string {
-  const directory = mkdtempSync(join(tmpdir(), "todo-backup-"));
-  test.after(() => rmSync(directory, { recursive: true, force: true }));
-  return directory;
+  return scratchDirectory("backup");
 }
 
 test("a database can be opened without being migrated", () => {

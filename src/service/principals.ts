@@ -19,15 +19,30 @@ export function renamePrincipal(
   name: string,
 ): Principal {
   const principal = getPrincipal(ctx, id);
-  if (name.trim() === "") throw invalid("a Principal's name must not be empty");
+  const cleaned = cleanName(name);
   const clash = ctx.db
     .prepare("select id from principals where name = ? and id <> ?")
-    .get(name, principal.id);
+    .get(cleaned, principal.id);
   if (clash !== undefined) {
-    throw conflict(`another Principal is already named "${name}"`);
+    throw conflict(`another Principal is already named "${cleaned}"`);
   }
-  ctx.db.prepare("update principals set name = ? where id = ?").run(name, id);
-  return { id: principal.id, name };
+  ctx.db
+    .prepare("update principals set name = ? where id = ?")
+    .run(cleaned, principal.id);
+  return { id: principal.id, name: cleaned };
+}
+
+/**
+ * The service does not trust its callers. An adapter that hands over a name of
+ * the wrong type must get a ServiceError, not a TypeError. Surrounding
+ * whitespace is dropped, so " Andrew " cannot pass the clash check as a second
+ * "Andrew" that the CLI's exact-name lookup would never find.
+ */
+function cleanName(name: unknown): string {
+  if (typeof name !== "string" || name.trim() === "") {
+    throw invalid("a Principal's name must not be empty");
+  }
+  return name.trim();
 }
 
 export function getPrincipal(ctx: ServiceContext, id: string): Principal {

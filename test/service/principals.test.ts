@@ -61,6 +61,31 @@ test("a whitespace-only name is invalid", () => {
   assert.equal(getPrincipal(ctx, principal.id).name, "Andrew");
 });
 
+test("a name is stored without surrounding whitespace", () => {
+  const { ctx, principal } = testHarness();
+
+  const renamed = renamePrincipal(ctx, principal.id, "  Drew ");
+
+  assert.equal(renamed.name, "Drew");
+  assert.equal(getPrincipal(ctx, principal.id).name, "Drew");
+});
+
+test("padding a taken name with whitespace is still a conflict", () => {
+  const { ctx, principal } = testHarness();
+
+  assert.throws(() => renamePrincipal(ctx, principal.id, " Someone Else "), {
+    code: "conflict",
+  });
+});
+
+test("a name that is not a string is invalid, not a crash", () => {
+  const { ctx, principal } = testHarness();
+
+  rejectsWith("invalid", () =>
+    renamePrincipal(ctx, principal.id, undefined as unknown as string),
+  );
+});
+
 test("renaming an unknown Principal is not found", () => {
   const { ctx } = testHarness();
 
